@@ -65,3 +65,10 @@ Atalho opcional: crie um token fino em GitHub > Settings > Developer settings, s
 **Secrets: Read and write**, e salve como secret `GH_PAT`. Assim o workflow grava os 4 secrets sozinho.
 
 O workflow se recusa a rodar se `KEYSTORE_BASE64` já existir, para você não trocar a chave por acidente.
+
+## Etapa 3: navegação
+
+- Alternar grade/lista, ordenar por nome, data ou tamanho (toque de novo para inverter) e busca por nome em todo o Drive
+- A pasta se expande ao tocar (transição de elemento compartilhado); voltar restaura a lista na hora
+- Toque longo seleciona vários itens; por enquanto a ação em lote é mover para a lixeira (com confirmação)
+- Favoritar e baixar entram na barra de seleção nas etapas 6 e 7
