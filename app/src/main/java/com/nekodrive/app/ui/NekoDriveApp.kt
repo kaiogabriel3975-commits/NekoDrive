@@ -1,5 +1,7 @@
 package com.nekodrive.app.ui
 
+import android.accounts.AccountManager
+import android.app.Activity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -68,28 +70,38 @@ fun NekoDriveApp() {
     // Etapa 1-2: barras translúcidas. O blur real (Haze) entra na etapa de polimento.
     val vidro = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
 
-    // Retorno da tela de consentimento do Google
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
+    // 1) tela de consentimento do Google (quando necessária)
+    val consentimento = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
         try {
-            vm.aoAutorizar(container.auth.fromIntent(res.data))
+            vm.aoAutorizar(container.auth.fromIntent(res.data).accessToken)
         } catch (e: Exception) {
             vm.mostrarErro("Login cancelado ou não concluído.")
         }
     }
-    val entrar: () -> Unit = {
+    // 2) autoriza o Drive para a conta escolhida
+    val autorizar: (String) -> Unit = { email ->
         scope.launch {
             try {
-                val r = container.auth.authorize(null)
+                val r = container.auth.authorize(email)
                 val pendente = r.pendingIntent
                 if (r.hasResolution() && pendente != null) {
-                    launcher.launch(IntentSenderRequest.Builder(pendente.intentSender).build())
+                    consentimento.launch(IntentSenderRequest.Builder(pendente.intentSender).build())
                 } else {
-                    vm.aoAutorizar(r)
+                    vm.aoAutorizar(r.accessToken)
                 }
             } catch (e: Exception) {
                 vm.mostrarErro("Falha ao entrar: ${e.message}")
             }
         }
+    }
+    // 3) seletor de contas do Android (permite escolher outra conta ou adicionar uma nova)
+    val escolherConta = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+        val email = res.data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)
+        if (res.resultCode == Activity.RESULT_OK && email != null) autorizar(email)
+    }
+    val entrar: () -> Unit = {
+        val intent = AccountManager.newChooseAccountIntent(null, null, arrayOf("com.google"), null, null, null, null)
+        escolherConta.launch(intent)
     }
 
     Scaffold(
