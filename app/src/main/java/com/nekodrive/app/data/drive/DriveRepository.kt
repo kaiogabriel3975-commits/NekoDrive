@@ -1,6 +1,7 @@
 package com.nekodrive.app.data.drive
 
 import com.nekodrive.app.data.auth.AuthManager
+import com.nekodrive.app.data.auth.GoogleAccount
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -39,6 +40,31 @@ class DriveRepository(private val auth: AuthManager) {
             }
         }
 
+    /** Identifica a conta dona do token (e-mail, nome e foto) pela própria API do Drive. */
+    suspend fun about(token: String): GoogleAccount = withContext(Dispatchers.IO) {
+        val url = "https://www.googleapis.com/drive/v3/about".toHttpUrl().newBuilder()
+            .addQueryParameter("fields", "user(displayName,emailAddress,photoLink)")
+            .build()
+        val req = Request.Builder().url(url).header("Authorization", "Bearer $token").build()
+        http.newCall(req).execute().use { resp ->
+            val body = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) throw IOException(mensagemDeErro(resp.code, body))
+            val u = JSONObject(body).getJSONObject("user")
+            GoogleAccount(
+                email = u.getString("emailAddress"),
+                name = u.optString("displayName").ifEmpty { null },
+                photoUrl = u.optString("photoLink").ifEmpty { null },
+            )
+        }
+    }
+
+    private fun mensagemDeErro(code: Int, body: String): String {
+        val detalhe = try {
+            JSONObject(body).optJSONObject("error")?.optString("message").orEmpty()
+        } catch (e: Exception) { "" }
+        return if (detalhe.isNotEmpty()) "Drive ($code): $detalhe" else "Erro $code do Drive"
+    }
+
     private fun request(token: String, folderId: String, pageToken: String?): DrivePage {
         val url = "https://www.googleapis.com/drive/v3/files".toHttpUrl().newBuilder()
             .addQueryParameter("q", "'$folderId' in parents and trashed = false")
@@ -51,7 +77,7 @@ class DriveRepository(private val auth: AuthManager) {
         http.newCall(req).execute().use { resp ->
             val body = resp.body?.string().orEmpty()
             if (resp.code == 401) throw UnauthorizedException()
-            if (!resp.isSuccessful) throw IOException("Erro ${resp.code} do Drive")
+            if (!resp.isSuccessful) throw IOException(mensagemDeErro(resp.code, body))
             val json = JSONObject(body)
             val arr = json.optJSONArray("files")
             val files = (0 until (arr?.length() ?: 0)).map { i ->
