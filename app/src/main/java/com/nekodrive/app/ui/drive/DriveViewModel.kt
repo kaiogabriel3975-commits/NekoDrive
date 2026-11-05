@@ -5,7 +5,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.android.gms.auth.api.identity.AuthorizationResult
 import com.nekodrive.app.data.AppContainer
 import com.nekodrive.app.data.auth.GoogleAccount
 import com.nekodrive.app.data.drive.DriveFile
@@ -83,19 +82,24 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
         return true
     }
 
-    fun aoAutorizar(r: AuthorizationResult) {
-        val google = r.toGoogleSignInAccount()
-        val email = google?.email
-        val accessToken = r.accessToken
-        if (email == null || accessToken == null) {
-            erro = "Não foi possível identificar a conta."
+    fun aoAutorizar(accessToken: String?) {
+        if (accessToken == null) {
+            erro = "O Google não devolveu a autorização. Tente de novo."
             return
         }
-        c.auth.remember(email, accessToken)
-        val nova = GoogleAccount(email, google.displayName, google.photoUrl?.toString())
-        contas = contas.filterNot { it.email == email } + nova
-        c.accounts.save(contas)
-        selecionar(nova)
+        viewModelScope.launch {
+            try {
+                val nova = c.drive.about(accessToken)
+                c.auth.remember(nova.email, accessToken)
+                contas = contas.filterNot { it.email == nova.email } + nova
+                c.accounts.save(contas)
+                selecionar(nova)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                erro = e.message ?: "Falha ao identificar a conta."
+            }
+        }
     }
 
     fun selecionar(conta: GoogleAccount) {
