@@ -52,3 +52,16 @@ Estado atual da etapa 2:
 - Pastas e arquivos do Meu Drive em grade com miniaturas, navegação por pastas e botão voltar
 - Tocar em foto ou vídeo ainda não faz nada (etapas 4 e 5)
 - Sem Hilt: usei injeção manual simples (AppContainer)
+
+## Gerar a keystore pelo GitHub (sem PC)
+
+1. Em **Actions > Gerar keystore > Run workflow** (o arquivo precisa estar na branch `main`).
+2. Ao terminar, abra a execução: o resumo mostra o **SHA-1** (cole no cliente OAuth do Google Cloud).
+3. Baixe o artefato **keystore-nekodrive** (fica 3 dias) e **guarde uma cópia**. Ele tem a keystore e as senhas.
+4. Crie os 4 secrets do build com os valores de `credenciais.txt`:
+   `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`.
+
+Atalho opcional: crie um token fino em GitHub > Settings > Developer settings, só para este repositório, com permissão
+**Secrets: Read and write**, e salve como secret `GH_PAT`. Assim o workflow grava os 4 secrets sozinho.
+
+O workflow se recusa a rodar se `KEYSTORE_BASE64` já existir, para você não trocar a chave por acidente.
