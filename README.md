@@ -32,3 +32,23 @@ Nunca envie o `.jks` ao repositório (já está no `.gitignore`).
 - minSdk 31 (Android 12), pacote `com.nekodrive.app`
 - Barras translúcidas; o blur real (Haze) entra no polimento
 - Botões de conta e configurações ainda sem ação
+
+## Etapa 2: login e listagem do Drive
+
+Para o login funcionar, configure o Google Cloud (uma vez):
+
+1. Crie um projeto em console.cloud.google.com e ative a **Google Drive API**.
+2. Em **Google Auth Platform** (tela de consentimento): tipo Externo, adicione o escopo
+   `https://www.googleapis.com/auth/drive`.
+3. Em **Clientes**, crie um cliente **Android** com o pacote `com.nekodrive.app` e o **SHA-1 da sua keystore fixa**
+   (veja o comando acima). Com a chave de debug o login falha (erro de desenvolvedor).
+4. Status do app:
+   - **Em teste:** só contas listadas como usuários de teste entram (adicione cada conta) e a autorização expira em 7 dias.
+   - **Em produção (sem verificação):** qualquer conta entra, com aviso de app não verificado e limite de 100 usuários.
+     É a opção indicada para uso pessoal. Confirme as regras atuais no console.
+
+Estado atual da etapa 2:
+- Várias contas: botão de contas no cabeçalho (trocar, adicionar, remover)
+- Pastas e arquivos do Meu Drive em grade com miniaturas, navegação por pastas e botão voltar
+- Tocar em foto ou vídeo ainda não faz nada (etapas 4 e 5)
+- Sem Hilt: usei injeção manual simples (AppContainer)
