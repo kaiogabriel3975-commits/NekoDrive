@@ -35,6 +35,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Sort
 import androidx.compose.material.icons.automirrored.outlined.ViewList
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Description
@@ -45,6 +46,7 @@ import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -156,6 +158,7 @@ private fun Barra(vm: DriveViewModel, aoExcluir: () -> Unit) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { vm.limparSelecao() }) { Icon(Icons.Outlined.Close, "Cancelar seleção") }
             Text("${vm.selecionados.size} selecionado(s)", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+            IconButton(onClick = { vm.favoritarSelecao(vm.itens) }) { Icon(Icons.Outlined.StarBorder, "Favoritar") }
             IconButton(onClick = { vm.baixarSelecionados() }) { Icon(Icons.Outlined.Download, "Baixar") }
             IconButton(onClick = aoExcluir) { Icon(Icons.Outlined.Delete, "Mover para a lixeira") }
         }
@@ -325,6 +328,13 @@ private fun Miniatura(f: DriveFile, token: String?, estado: EstadoArquivo, taman
                     .background(Color.Black.copy(alpha = 0.55f), CircleShape).padding(3.dp).size(14.dp),
             )
         }
+        if (estado.favorito) {
+            Icon(
+                Icons.Filled.Star, "Favorito", tint = Color(0xFFFFC107),
+                modifier = Modifier.align(Alignment.TopStart).padding(4.dp)
+                    .background(Color.Black.copy(alpha = 0.55f), CircleShape).padding(3.dp).size(14.dp),
+            )
+        }
         if (estado.assistido) {
             Icon(
                 Icons.Outlined.TaskAlt, "Assistido", tint = Color.White,
@@ -337,7 +347,7 @@ private fun Miniatura(f: DriveFile, token: String?, estado: EstadoArquivo, taman
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
-private fun ItemGrade(
+internal fun ItemGrade(
     f: DriveFile,
     token: String?,
     selecionado: Boolean,
@@ -378,7 +388,7 @@ private fun ItemGrade(
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
-private fun ItemLinha(
+internal fun ItemLinha(
     f: DriveFile,
     token: String?,
     selecionado: Boolean,

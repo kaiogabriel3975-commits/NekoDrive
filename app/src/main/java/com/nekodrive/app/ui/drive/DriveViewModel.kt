@@ -14,10 +14,14 @@ import com.nekodrive.app.data.Progresso
 import com.nekodrive.app.data.auth.GoogleAccount
 import com.nekodrive.app.data.drive.DriveFile
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -26,7 +30,7 @@ import java.net.UnknownHostException
 data class Pasta(val id: String, val nome: String)
 
 /** Situação de um arquivo na lista: salvo no cache, assistido, ou baixando (progresso de 0 a 1). */
-data class EstadoArquivo(val noCache: Boolean, val assistido: Boolean, val progresso: Float?)
+data class EstadoArquivo(val noCache: Boolean, val assistido: Boolean, val progresso: Float?, val favorito: Boolean = false)
 
 /** Fotos abertas no visualizador (somente as imagens da lista atual) e a foto em exibição. */
 data class FotosAbertas(val fotos: List<DriveFile>, val indice: Int)
@@ -70,6 +74,22 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     private val tarefas = HashMap<String, Job>()
     val midia get() = c.midia
 
+    // favoritos (locais) e lixeira
+    var favoritosItens by mutableStateOf<List<DriveFile>>(emptyList()); private set
+    var favoritosIds by mutableStateOf(setOf<String>()); private set
+    var indisponiveis by mutableStateOf(setOf<String>()); private set
+    var carregandoFavoritos by mutableStateOf(false); private set
+
+    var lixeira by mutableStateOf<List<DriveFile>>(emptyList()); private set
+    var carregandoLixeira by mutableStateOf(false); private set
+    var temMaisLixeira by mutableStateOf(false); private set
+    var erroLixeira by mutableStateOf<String?>(null); private set
+    private var proximaLixeira: String? = null
+    private var jobLixeira: Job? = null
+
+    /** Lista e posição de rolagem de onde a foto/vídeo foi aberto (Drive, Favoritos...). */
+    private var rolagem: Pair<String, List<DriveFile>>? = null
+
     /** null = folha de detalhes fechada. */
     var detalhes by mutableStateOf<List<Pair<String, String>>?>(null); private set
     var tituloDetalhes by mutableStateOf(""); private set
@@ -86,6 +106,7 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     init {
         contaAtual = contas.firstOrNull { it.email == c.accounts.currentEmail } ?: contas.firstOrNull()
         c.midia.definirConta(contaAtual?.email)
+        recarregarFavoritosLocais()
         recarregar()
     }
 
@@ -255,6 +276,9 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
                 try {
                     c.drive.trash(conta.email, id)
                     itens = itens.filterNot { it.id == id }
+                    favoritosItens = favoritosItens.filterNot { it.id == id }
+                    favoritosIds = favoritosIds - id
+                    contaAtual?.let { c.favoritos.salvar(it.email, favoritosItens) }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -268,10 +292,15 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
 
     // ---------- visualizador de fotos ----------
 
-    fun abrirFoto(f: DriveFile) {
-        val fotos = itens.filter { it.isImage }
+    private fun chaveRolagemDrive() = if (buscando) "busca" else pilha.last().id
+
+    fun abrirFoto(f: DriveFile, lista: List<DriveFile> = itens, chave: String = chaveRolagemDrive()) {
+        val fotos = lista.filter { it.isImage }
         val i = fotos.indexOfFirst { it.id == f.id }
-        if (i >= 0) visualizador = FotosAbertas(fotos, i)
+        if (i >= 0) {
+            rolagem = chave to lista
+            visualizador = FotosAbertas(fotos, i)
+        }
     }
 
     fun indiceFoto(i: Int) {
@@ -289,9 +318,9 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     private suspend fun garantirVisivel(id: String) {
-        val idx = itens.indexOfFirst { it.id == id }
+        val (chave, lista) = rolagem ?: (chaveRolagemDrive() to itens)
+        val idx = lista.indexOfFirst { it.id == id }
         if (idx < 0) return
-        val chave = if (buscando) "busca" else pilha.last().id
         if (grade) {
             val e = estadoGrade(chave)
             if (e.layoutInfo.visibleItemsInfo.none { it.index == idx }) e.scrollToItem(idx)
@@ -303,9 +332,10 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
 
     // ---------- player de vídeo ----------
 
-    fun abrirVideo(f: DriveFile) {
+    fun abrirVideo(f: DriveFile, lista: List<DriveFile> = itens, chave: String = chaveRolagemDrive()) {
+        rolagem = chave to lista
         val base = f.name.substringBeforeLast('.', f.name)
-        val legendas = itens.filter { l ->
+        val legendas = lista.filter { l ->
             !l.isFolder && l.id != f.id &&
                 (l.name.endsWith(".srt", true) || l.name.endsWith(".vtt", true)) &&
                 l.name.startsWith(base, ignoreCase = true)
@@ -382,6 +412,7 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
             noCache = !f.isFolder && c.midia.completo(conta.email, f),
             assistido = f.isVideo && c.playback.obter(conta.email, f.id)?.assistido == true,
             progresso = progressos[f.id],
+            favorito = f.id in favoritosIds,
         )
     }
 
@@ -422,6 +453,178 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
         versaoCache++
     }
 
+    // ---------- favoritos ----------
+
+    private fun recarregarFavoritosLocais() {
+        val lista = contaAtual?.let { c.favoritos.ler(it.email) } ?: emptyList()
+        favoritosItens = lista
+        favoritosIds = lista.map { it.id }.toSet()
+        indisponiveis = emptySet()
+    }
+
+    private fun gravarFavoritos(email: String, lista: List<DriveFile>) {
+        c.favoritos.salvar(email, lista)
+        favoritosItens = lista
+        favoritosIds = lista.map { it.id }.toSet()
+    }
+
+    fun alternarFavorito(f: DriveFile) {
+        val conta = contaAtual ?: return
+        if (f.isFolder) return
+        val novos = if (f.id in favoritosIds) favoritosItens.filterNot { it.id == f.id } else listOf(f) + favoritosItens
+        gravarFavoritos(conta.email, novos)
+    }
+
+    /** Se todos os selecionados já são favoritos, remove; senão, adiciona os que faltam. */
+    fun favoritarSelecao(origem: List<DriveFile>) {
+        val conta = contaAtual ?: return
+        val alvo = origem.filter { it.id in selecionados && !it.isFolder }
+        if (alvo.isEmpty()) { selecionados = emptySet(); return }
+        val ids = alvo.map { it.id }.toSet()
+        val novos = if (alvo.all { it.id in favoritosIds }) {
+            favoritosItens.filterNot { it.id in ids }
+        } else {
+            alvo.filter { it.id !in favoritosIds } + favoritosItens
+        }
+        gravarFavoritos(conta.email, novos)
+        selecionados = emptySet()
+    }
+
+    /** Atualiza os metadados dos favoritos (miniaturas expiram) e marca os que sumiram do Drive. */
+    fun carregarFavoritos() {
+        val conta = contaAtual ?: return
+        val atuais = favoritosItens
+        if (atuais.isEmpty()) return
+        carregandoFavoritos = true
+        viewModelScope.launch {
+            try {
+                val sem = Semaphore(4)
+                val resultados: List<Result<DriveFile?>> = coroutineScope {
+                    atuais.map { f ->
+                        async {
+                            sem.withPermit {
+                                try {
+                                    Result.success(c.drive.arquivo(conta.email, f.id))
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    Result.failure(e)
+                                }
+                            }
+                        }
+                    }.awaitAll()
+                }
+                val sumidos = mutableSetOf<String>()
+                val lista = atuais.mapIndexed { i, antigo ->
+                    val r = resultados[i]
+                    if (r.isSuccess) {
+                        val novo = r.getOrNull()
+                        if (novo == null) { sumidos += antigo.id; antigo } else novo
+                    } else {
+                        antigo
+                    }
+                }
+                if (conta.email == contaAtual?.email) {
+                    gravarFavoritos(conta.email, lista)
+                    indisponiveis = sumidos
+                    token = c.auth.token(conta.email)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // sem rede: mantém o que já estava salvo
+            } finally {
+                carregandoFavoritos = false
+            }
+        }
+    }
+
+    fun removerIndisponiveis() {
+        val conta = contaAtual ?: return
+        gravarFavoritos(conta.email, favoritosItens.filterNot { it.id in indisponiveis })
+        indisponiveis = emptySet()
+    }
+
+    // ---------- lixeira ----------
+
+    fun carregarLixeira() {
+        val conta = contaAtual
+        jobLixeira?.cancel()
+        lixeira = emptyList(); proximaLixeira = null; temMaisLixeira = false; erroLixeira = null
+        if (conta == null) { carregandoLixeira = false; return }
+        jobLixeira = viewModelScope.launch { paginaLixeira(conta, null) }
+    }
+
+    fun carregarMaisLixeira() {
+        val conta = contaAtual ?: return
+        val pagina = proximaLixeira ?: return
+        if (carregandoLixeira) return
+        jobLixeira = viewModelScope.launch { paginaLixeira(conta, pagina) }
+    }
+
+    private suspend fun paginaLixeira(conta: GoogleAccount, pagina: String?) {
+        carregandoLixeira = true
+        try {
+            val p = c.drive.list(conta.email, "trashed = true", "folder,name_natural", pagina)
+            lixeira = lixeira + p.files
+            proximaLixeira = p.nextPageToken
+            temMaisLixeira = proximaLixeira != null
+            token = c.auth.token(conta.email)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: UnknownHostException) {
+            erroLixeira = "Sem conexão com a internet."
+        } catch (e: Exception) {
+            erroLixeira = e.message ?: "Falha ao carregar a lixeira."
+        } finally {
+            carregandoLixeira = false
+        }
+    }
+
+    /** Aplica [acao] a cada item selecionado da lixeira; o que falhar continua selecionado. */
+    private fun acaoNaLixeira(titulo: String, acao: suspend (String, String) -> Unit, aoConcluir: () -> Unit = {}) {
+        val conta = contaAtual ?: return
+        val ids = selecionados.filter { id -> lixeira.any { it.id == id } }
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            val falhas = mutableSetOf<String>()
+            for (id in ids) {
+                try {
+                    acao(conta.email, id)
+                    lixeira = lixeira.filterNot { it.id == id }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    falhas += id
+                }
+            }
+            selecionados = falhas
+            if (falhas.isNotEmpty()) erroLixeira = "Não foi possível $titulo ${falhas.size} item(ns)."
+            aoConcluir()
+        }
+    }
+
+    fun restaurarSelecionados() = acaoNaLixeira("restaurar", { email, id -> c.drive.restaurar(email, id) }) {
+        cache.clear()
+        recarregar()
+    }
+
+    fun excluirDefinitivoSelecionados() = acaoNaLixeira("excluir", { email, id -> c.drive.excluirDefinitivo(email, id) })
+
+    fun esvaziarLixeira() {
+        val conta = contaAtual ?: return
+        viewModelScope.launch {
+            try {
+                c.drive.esvaziarLixeira(conta.email)
+                lixeira = emptyList(); temMaisLixeira = false; selecionados = emptySet()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                erroLixeira = e.message ?: "Falha ao esvaziar a lixeira."
+            }
+        }
+    }
+
     // ---------- contas ----------
 
     fun aoAutorizar(accessToken: String?) {
@@ -447,6 +650,7 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     fun selecionar(conta: GoogleAccount) {
         contaAtual = conta
         c.midia.definirConta(conta.email)
+        recarregarFavoritosLocais()
         c.accounts.currentEmail = conta.email
         pilha = listOf(raiz)
         buscando = false; termo = ""
@@ -464,6 +668,7 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
             } else {
                 contaAtual = null
                 c.midia.definirConta(null)
+                recarregarFavoritosLocais()
                 c.accounts.currentEmail = null
                 pilha = listOf(raiz)
                 buscando = false; termo = ""
