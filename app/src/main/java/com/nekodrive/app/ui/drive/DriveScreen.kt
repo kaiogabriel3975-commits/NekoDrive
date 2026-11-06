@@ -102,7 +102,7 @@ fun DriveScreen(
         if (vm.selecionados.isNotEmpty()) vm.alternarSelecao(f)
         else if (f.isFolder) vm.abrirPasta(f)
         else if (f.isImage) vm.abrirFoto(f)
-        // vídeos abrem na etapa 5
+        else if (f.isVideo) vm.abrirVideo(f)
     }
     val chave = if (vm.buscando) "busca" else vm.pilha.last().id
 
@@ -325,6 +325,7 @@ private fun ItemGrade(
     val base = when {
         f.isFolder -> Modifier.pastaBounds("pasta-${f.id}", st, av)
         f.isImage -> Modifier.pastaBounds("foto-${f.id}", st, avExterno)
+        f.isVideo -> Modifier.pastaBounds("video-${f.id}", st, avExterno)
         else -> Modifier
     }
     Card(modifier = base.combinedClickable(onClick = onClick, onLongClick = onLongClick), border = borda) {
@@ -363,6 +364,7 @@ private fun ItemLinha(
     val base = when {
         f.isFolder -> Modifier.pastaBounds("pasta-${f.id}", st, av)
         f.isImage -> Modifier.pastaBounds("foto-${f.id}", st, avExterno)
+        f.isVideo -> Modifier.pastaBounds("video-${f.id}", st, avExterno)
         else -> Modifier
     }
     val fundo = if (selecionado) MaterialTheme.colorScheme.primaryContainer else Color.Transparent

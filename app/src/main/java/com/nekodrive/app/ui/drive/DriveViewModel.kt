@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nekodrive.app.data.AppContainer
+import com.nekodrive.app.data.Progresso
 import com.nekodrive.app.data.auth.GoogleAccount
 import com.nekodrive.app.data.drive.DriveFile
 import kotlinx.coroutines.CancellationException
@@ -23,6 +24,9 @@ data class Pasta(val id: String, val nome: String)
 
 /** Fotos abertas no visualizador (somente as imagens da lista atual) e a foto em exibição. */
 data class FotosAbertas(val fotos: List<DriveFile>, val indice: Int)
+
+/** Vídeo aberto no player e as legendas (.srt/.vtt) de mesmo nome encontradas na mesma lista. */
+data class VideoAberto(val arquivo: DriveFile, val legendas: List<DriveFile>)
 
 enum class CampoOrdem(val rotulo: String, val chaveApi: String) {
     Nome("Nome", "name_natural"),
@@ -51,6 +55,7 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     var selecionados by mutableStateOf(setOf<String>()); private set
 
     var visualizador by mutableStateOf<FotosAbertas?>(null); private set
+    var video by mutableStateOf<VideoAberto?>(null); private set
 
     /** null = folha de detalhes fechada. */
     var detalhes by mutableStateOf<List<Pair<String, String>>?>(null); private set
@@ -280,6 +285,33 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
             val e = estadoLista(chave)
             if (e.layoutInfo.visibleItemsInfo.none { it.index == idx }) e.scrollToItem(idx)
         }
+    }
+
+    // ---------- player de vídeo ----------
+
+    fun abrirVideo(f: DriveFile) {
+        val base = f.name.substringBeforeLast('.', f.name)
+        val legendas = itens.filter { l ->
+            !l.isFolder && l.id != f.id &&
+                (l.name.endsWith(".srt", true) || l.name.endsWith(".vtt", true)) &&
+                l.name.startsWith(base, ignoreCase = true)
+        }
+        video = VideoAberto(f, legendas)
+    }
+
+    fun fecharVideo() {
+        val v = video ?: return
+        viewModelScope.launch {
+            garantirVisivel(v.arquivo.id)
+            video = null
+        }
+    }
+
+    fun progresso(f: DriveFile): Progresso? = contaAtual?.let { c.playback.obter(it.email, f.id) }
+
+    fun salvarProgresso(f: DriveFile, posicaoMs: Long, duracaoMs: Long) {
+        val conta = contaAtual ?: return
+        c.playback.salvar(conta.email, f.id, posicaoMs, duracaoMs)
     }
 
     /** Garante um token válido para carregar as imagens em tamanho original. */
