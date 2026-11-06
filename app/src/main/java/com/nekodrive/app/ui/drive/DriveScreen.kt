@@ -4,7 +4,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -82,7 +81,13 @@ import com.nekodrive.app.data.drive.DriveFile
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-fun DriveScreen(vm: DriveViewModel, onEntrar: () -> Unit, modifier: Modifier = Modifier) {
+fun DriveScreen(
+    vm: DriveViewModel,
+    onEntrar: () -> Unit,
+    st: SharedTransitionScope,
+    avExterno: AnimatedVisibilityScope,
+    modifier: Modifier = Modifier,
+) {
     var confirmar by remember { mutableStateOf(false) }
 
     BackHandler(enabled = vm.buscando || vm.pilha.size > 1) { vm.voltar() }
@@ -94,8 +99,10 @@ fun DriveScreen(vm: DriveViewModel, onEntrar: () -> Unit, modifier: Modifier = M
     }
 
     val aoTocar: (DriveFile) -> Unit = { f ->
-        if (vm.selecionados.isNotEmpty()) vm.alternarSelecao(f) else if (f.isFolder) vm.abrirPasta(f)
-        // fotos e vídeos abrem nas etapas 4 e 5
+        if (vm.selecionados.isNotEmpty()) vm.alternarSelecao(f)
+        else if (f.isFolder) vm.abrirPasta(f)
+        else if (f.isImage) vm.abrirFoto(f)
+        // vídeos abrem na etapa 5
     }
     val chave = if (vm.buscando) "busca" else vm.pilha.last().id
 
@@ -107,21 +114,21 @@ fun DriveScreen(vm: DriveViewModel, onEntrar: () -> Unit, modifier: Modifier = M
                 TextButton(onClick = { vm.recarregar() }) { Text("Tentar de novo") }
             }
         }
-        SharedTransitionLayout(Modifier.weight(1f).fillMaxWidth()) {
-            AnimatedContent(
-                targetState = chave,
-                transitionSpec = { fadeIn(tween(240)) togetherWith fadeOut(tween(240)) },
-                label = "pasta",
-            ) { chavePagina ->
-                PaginaPasta(
-                    atual = chavePagina == chave,
-                    chave = chavePagina,
-                    vm = vm,
-                    st = this@SharedTransitionLayout,
-                    av = this@AnimatedContent,
-                    aoTocar = aoTocar,
-                )
-            }
+        AnimatedContent(
+            targetState = chave,
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            transitionSpec = { fadeIn(tween(240)) togetherWith fadeOut(tween(240)) },
+            label = "pasta",
+        ) { chavePagina ->
+            PaginaPasta(
+                atual = chavePagina == chave,
+                chave = chavePagina,
+                vm = vm,
+                st = st,
+                av = this@AnimatedContent,
+                avExterno = avExterno,
+                aoTocar = aoTocar,
+            )
         }
     }
 
@@ -203,7 +210,7 @@ private fun Barra(vm: DriveViewModel, aoExcluir: () -> Unit) {
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-private fun Modifier.pastaBounds(chave: String, st: SharedTransitionScope, av: AnimatedVisibilityScope): Modifier =
+internal fun Modifier.pastaBounds(chave: String, st: SharedTransitionScope, av: AnimatedVisibilityScope): Modifier =
     with(st) { this@pastaBounds.sharedBounds(rememberSharedContentState(key = chave), animatedVisibilityScope = av) }
 
 @OptIn(ExperimentalSharedTransitionApi::class)
@@ -214,6 +221,7 @@ private fun PaginaPasta(
     vm: DriveViewModel,
     st: SharedTransitionScope,
     av: AnimatedVisibilityScope,
+    avExterno: AnimatedVisibilityScope,
     aoTocar: (DriveFile) -> Unit,
 ) {
     // A página que está saindo mostra a última lista que ela exibiu, e não a da pasta nova.
@@ -226,22 +234,23 @@ private fun PaginaPasta(
             if (vm.grade) {
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(110.dp),
+                    state = vm.estadoGrade(chave),
                     contentPadding = PaddingValues(12.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     items(lista, key = { it.id }) { f ->
-                        ItemGrade(f, vm.token, f.id in vm.selecionados, st, av, { aoTocar(f) }, { vm.alternarSelecao(f) })
+                        ItemGrade(f, vm.token, f.id in vm.selecionados, st, av, avExterno, { aoTocar(f) }, { vm.alternarSelecao(f) })
                     }
                     if (atual && vm.temMais) {
                         item(span = { GridItemSpan(maxLineSpan) }) { CarregandoMais(vm) }
                     }
                 }
             } else {
-                LazyColumn(Modifier.fillMaxSize()) {
+                LazyColumn(Modifier.fillMaxSize(), state = vm.estadoLista(chave)) {
                     items(lista, key = { it.id }) { f ->
-                        ItemLinha(f, vm.token, f.id in vm.selecionados, st, av, { aoTocar(f) }, { vm.alternarSelecao(f) })
+                        ItemLinha(f, vm.token, f.id in vm.selecionados, st, av, avExterno, { aoTocar(f) }, { vm.alternarSelecao(f) })
                     }
                     if (atual && vm.temMais) {
                         item { CarregandoMais(vm) }
@@ -308,11 +317,16 @@ private fun ItemGrade(
     selecionado: Boolean,
     st: SharedTransitionScope,
     av: AnimatedVisibilityScope,
+    avExterno: AnimatedVisibilityScope,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
     val borda = if (selecionado) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null
-    val base = if (f.isFolder) Modifier.pastaBounds("pasta-${f.id}", st, av) else Modifier
+    val base = when {
+        f.isFolder -> Modifier.pastaBounds("pasta-${f.id}", st, av)
+        f.isImage -> Modifier.pastaBounds("foto-${f.id}", st, avExterno)
+        else -> Modifier
+    }
     Card(modifier = base.combinedClickable(onClick = onClick, onLongClick = onLongClick), border = borda) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
             Miniatura(f, token, 44.dp, Modifier.fillMaxSize())
@@ -342,10 +356,15 @@ private fun ItemLinha(
     selecionado: Boolean,
     st: SharedTransitionScope,
     av: AnimatedVisibilityScope,
+    avExterno: AnimatedVisibilityScope,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
-    val base = if (f.isFolder) Modifier.pastaBounds("pasta-${f.id}", st, av) else Modifier
+    val base = when {
+        f.isFolder -> Modifier.pastaBounds("pasta-${f.id}", st, av)
+        f.isImage -> Modifier.pastaBounds("foto-${f.id}", st, avExterno)
+        else -> Modifier
+    }
     val fundo = if (selecionado) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
     Row(
         base.fillMaxWidth()

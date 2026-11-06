@@ -1,5 +1,7 @@
 package com.nekodrive.app.ui.drive
 
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -9,12 +11,18 @@ import com.nekodrive.app.data.AppContainer
 import com.nekodrive.app.data.auth.GoogleAccount
 import com.nekodrive.app.data.drive.DriveFile
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 import java.net.UnknownHostException
 
 data class Pasta(val id: String, val nome: String)
+
+/** Fotos abertas no visualizador (somente as imagens da lista atual) e a foto em exibição. */
+data class FotosAbertas(val fotos: List<DriveFile>, val indice: Int)
 
 enum class CampoOrdem(val rotulo: String, val chaveApi: String) {
     Nome("Nome", "name_natural"),
@@ -42,6 +50,16 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     var termo by mutableStateOf(""); private set
     var selecionados by mutableStateOf(setOf<String>()); private set
 
+    var visualizador by mutableStateOf<FotosAbertas?>(null); private set
+
+    /** null = folha de detalhes fechada. */
+    var detalhes by mutableStateOf<List<Pair<String, String>>?>(null); private set
+    var tituloDetalhes by mutableStateOf(""); private set
+    var carregandoDetalhes by mutableStateOf(false); private set
+
+    private val estadosGrade = HashMap<String, LazyGridState>()
+    private val estadosLista = HashMap<String, LazyListState>()
+
     private var proxima: String? = null
     private var job: Job? = null
     /** Listagens já carregadas por pasta, para voltar instantaneamente. */
@@ -53,6 +71,11 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     fun mostrarErro(msg: String) { erro = msg }
+
+    /** Posição de rolagem por pasta: sobrevive à abertura do visualizador e ao voltar de uma pasta. */
+    fun estadoGrade(chave: String): LazyGridState = estadosGrade.getOrPut(chave) { LazyGridState() }
+    fun estadoLista(chave: String): LazyListState = estadosLista.getOrPut(chave) { LazyListState() }
+    private fun reiniciarRolagem(chave: String) { estadosGrade.remove(chave); estadosLista.remove(chave) }
 
     // ---------- consulta ----------
 
@@ -128,6 +151,7 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
             salvarCache()
             pilha = pilha + Pasta(f.id, f.name)
         }
+        reiniciarRolagem(f.id)
         carregarPastaAtual(usarCache = false)
     }
 
@@ -165,6 +189,7 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
         if (buscando) return
         salvarCache()
         job?.cancel()
+        reiniciarRolagem("busca")
         buscando = true; termo = ""
         itens = emptyList(); proxima = null; temMais = false; carregando = false
         erro = null; selecionados = emptySet()
@@ -220,6 +245,80 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
             selecionados = falhas
             if (falhas.isNotEmpty()) erro = "Não foi possível mover ${falhas.size} item(ns) para a lixeira."
         }
+    }
+
+    // ---------- visualizador de fotos ----------
+
+    fun abrirFoto(f: DriveFile) {
+        val fotos = itens.filter { it.isImage }
+        val i = fotos.indexOfFirst { it.id == f.id }
+        if (i >= 0) visualizador = FotosAbertas(fotos, i)
+    }
+
+    fun indiceFoto(i: Int) {
+        visualizador = visualizador?.takeIf { i in it.fotos.indices }?.copy(indice = i) ?: visualizador
+    }
+
+    /** Fecha o visualizador depois de rolar a lista até a foto atual, para a animação voltar ao lugar certo. */
+    fun fecharFoto() {
+        val v = visualizador ?: return
+        val atual = v.fotos.getOrNull(v.indice)
+        viewModelScope.launch {
+            if (atual != null) garantirVisivel(atual.id)
+            visualizador = null
+        }
+    }
+
+    private suspend fun garantirVisivel(id: String) {
+        val idx = itens.indexOfFirst { it.id == id }
+        if (idx < 0) return
+        val chave = if (buscando) "busca" else pilha.last().id
+        if (grade) {
+            val e = estadoGrade(chave)
+            if (e.layoutInfo.visibleItemsInfo.none { it.index == idx }) e.scrollToItem(idx)
+        } else {
+            val e = estadoLista(chave)
+            if (e.layoutInfo.visibleItemsInfo.none { it.index == idx }) e.scrollToItem(idx)
+        }
+    }
+
+    /** Garante um token válido para carregar as imagens em tamanho original. */
+    fun renovarToken() {
+        val conta = contaAtual ?: return
+        viewModelScope.launch {
+            try { token = c.auth.token(conta.email) } catch (e: CancellationException) { throw e } catch (e: Exception) { }
+        }
+    }
+
+    fun abrirDetalhes(f: DriveFile) {
+        val conta = contaAtual ?: return
+        tituloDetalhes = f.name
+        detalhes = emptyList()
+        carregandoDetalhes = true
+        viewModelScope.launch {
+            try {
+                detalhes = c.drive.detalhes(conta.email, f.id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                detalhes = listOf("Erro" to (e.message ?: "Falha ao carregar os detalhes"))
+            } finally {
+                carregandoDetalhes = false
+            }
+        }
+    }
+
+    fun fecharDetalhes() { detalhes = null }
+
+    /** Baixa o arquivo para a pasta de cópias do cache (usada pelo botão copiar) e devolve o arquivo. */
+    suspend fun copiarParaCache(f: DriveFile): File {
+        val conta = contaAtual ?: error("Nenhuma conta selecionada")
+        val dir = File(c.cacheDir, "copiar")
+        withContext(Dispatchers.IO) { dir.listFiles()?.forEach { it.delete() } }
+        val nome = f.id + "_" + f.name.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        val arquivo = File(dir, nome)
+        c.drive.baixar(conta.email, f.id, arquivo)
+        return arquivo
     }
 
     // ---------- contas ----------
