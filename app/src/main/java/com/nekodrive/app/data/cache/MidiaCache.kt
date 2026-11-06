@@ -19,14 +19,41 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import okhttp3.Cookie
+import okhttp3.CookieJar
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
+import okhttp3.Request
 import java.io.File
 import java.io.IOException
+import java.net.URLDecoder
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.TreeSet
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.coroutineContext
 
 private const val GB = 1024L * 1024L * 1024L
+
+/** O token do Drive só é enviado para estes endereços do Google. */
+private val HOSTS_COM_TOKEN = setOf("www.googleapis.com", "drive.google.com", "docs.google.com")
+
+/** Guarda os cookies em memória (a versão convertida do Drive exige o cookie DRIVE_STREAM). */
+class JarMemoria : CookieJar {
+    private val todos = CopyOnWriteArrayList<Cookie>()
+
+    override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+        cookies.forEach { novo ->
+            todos.removeIf { it.name == novo.name && it.domain == novo.domain && it.path == novo.path }
+            todos.add(novo)
+        }
+    }
+
+    override fun loadForRequest(url: HttpUrl): List<Cookie> {
+        val agora = System.currentTimeMillis()
+        return todos.filter { it.expiresAt > agora && it.matches(url) }
+    }
+}
 
 /**
  * Remove primeiro o que foi usado há mais tempo quando o total passa de [maxBytes].
@@ -87,11 +114,13 @@ class MidiaCache(context: Context, private val auth: AuthManager, limiteGb: Int)
     private val evictor = EvictorAjustavel(limiteGb * GB)
     private val cache = SimpleCache(File(context.cacheDir, "midia"), evictor, StandaloneDatabaseProvider(context))
 
-    /** Anexa o token da conta atual a cada requisição ao Drive (renovado quando preciso). */
+    private val cookies = JarMemoria()
+
+    /** Anexa o token da conta atual às requisições ao Google (renovado quando preciso). */
     private val cliente = OkHttpClient.Builder().addInterceptor { chain ->
         val email = conta.get()
         val req = chain.request()
-        if (email == null) {
+        if (email == null || req.url.host !in HOSTS_COM_TOKEN) {
             chain.proceed(req)
         } else {
             val token = try {
@@ -101,9 +130,43 @@ class MidiaCache(context: Context, private val auth: AuthManager, limiteGb: Int)
             }
             chain.proceed(req.newBuilder().header("Authorization", "Bearer $token").build())
         }
-    }.build()
+    }.cookieJar(cookies).build()
+
+    /** Servidor local usado para transmitir ao Chromecast. */
+    val servidor: ServidorLocal by lazy { ServidorLocal(cliente) }
 
     fun definirConta(email: String?) { conta.set(email) }
+
+    fun urlOriginal(id: String): String = url(id)
+
+    /**
+     * Endereço da versão convertida (mp4) que o Drive gera para streaming. Usa um endereço NÃO oficial do Drive,
+     * que pode mudar ou deixar de funcionar.
+     */
+    suspend fun urlConvertida(email: String, id: String): String = withContext(Dispatchers.IO) {
+        conta.set(email)
+        val endereco = "https://drive.google.com/get_video_info".toHttpUrl().newBuilder()
+            .addQueryParameter("docid", id)
+            .addQueryParameter("drive_originator_app", "303")
+            .build()
+        val corpo = cliente.newCall(Request.Builder().url(endereco).build()).execute()
+            .use { it.body?.string().orEmpty() }
+        val campos = corpo.split('&').mapNotNull { par ->
+            val i = par.indexOf('=')
+            if (i < 0) null else URLDecoder.decode(par.substring(0, i), "UTF-8") to URLDecoder.decode(par.substring(i + 1), "UTF-8")
+        }.toMap()
+        if (campos["status"] != "ok") {
+            throw IOException(campos["reason"] ?: "O Drive não ofereceu uma versão convertida deste vídeo")
+        }
+        val mapa = (campos["fmt_stream_map"] ?: throw IOException("O Drive não devolveu os formatos convertidos"))
+            .split(',')
+            .mapNotNull { entrada ->
+                val i = entrada.indexOf('|')
+                if (i < 0) null else entrada.substring(0, i) to entrada.substring(i + 1).replace("\\u0026", "&")
+            }.toMap()
+        for (itag in listOf("37", "22", "59", "18")) mapa[itag]?.let { return@withContext it }
+        mapa.values.firstOrNull() ?: throw IOException("Nenhum formato convertido disponível")
+    }
 
     fun chave(email: String, id: String) = "$email|$id"
 
