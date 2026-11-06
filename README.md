@@ -80,3 +80,14 @@ O workflow se recusa a rodar se `KEYSTORE_BASE64` já existir, para você não t
 - Toque na foto mostra/esconde as barras. Botões: girar (só visual), copiar a imagem e detalhes
 - Detalhes mostram todos os campos que a API do Drive devolve
 - A rolagem de cada pasta agora é guardada (ao voltar de uma pasta ou fechar uma foto)
+
+## Etapa 5: player de vídeo
+
+- Tocar num vídeo abre o player em tela cheia (mesma animação de expansão das fotos)
+- Streaming direto do Drive com o token da conta (renovado durante a reprodução)
+- Controles: play/pause, ±10 s, barra de posição, velocidade (0,5x a 2x), legendas, Picture-in-Picture e girar a tela
+- Gestos: toque mostra/esconde controles, toque duplo avança/volta 10 s, segurar acelera 2x, pinça dá zoom, arrastar para baixo fecha
+- Legendas: faixas embutidas e arquivos .srt/.vtt com o mesmo nome na mesma pasta
+- Retoma de onde parou; passou de 90% vira "assistido" (usado na etapa 6, cache e limpeza)
+- Formatos que o ExoPlayer não toca (ex.: AVI) mostram erro; a versão convertida do Drive entra na etapa 8
+- Chromecast: etapa 8
