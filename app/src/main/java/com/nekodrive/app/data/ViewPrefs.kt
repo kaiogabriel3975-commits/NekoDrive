@@ -14,6 +14,11 @@ class ViewPrefs(context: Context) {
         get() = p.getString("campo", "Nome") ?: "Nome"
         set(v) { p.edit().putString("campo", v).apply() }
 
+    /** Limite do cache de mídia, em GB. */
+    var limiteGb: Int
+        get() = p.getInt("limiteGb", 5)
+        set(v) { p.edit().putInt("limiteGb", v).apply() }
+
     var crescente: Boolean
         get() = p.getBoolean("crescente", true)
         set(v) { p.edit().putBoolean("crescente", v).apply() }
