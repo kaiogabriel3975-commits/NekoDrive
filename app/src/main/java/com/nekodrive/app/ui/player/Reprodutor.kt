@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material.icons.outlined.Cast
 import androidx.compose.material.icons.outlined.ClosedCaption
 import androidx.compose.material.icons.outlined.Forward10
 import androidx.compose.material.icons.outlined.PictureInPictureAlt
@@ -79,6 +80,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.PictureInPictureModeChangedInfo
+import androidx.fragment.app.FragmentActivity
+import com.google.android.gms.cast.framework.CastState
 import androidx.core.util.Consumer
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -137,6 +140,8 @@ fun Reprodutor(vm: DriveViewModel, dados: VideoAberto, st: SharedTransitionScope
     val activity = remember(ctx) { ctx.encontrarActivity() }
     val scope = rememberCoroutineScope()
     val favorito = vm.estadoDe(arquivo).favorito
+    val email = vm.contaAtual?.email ?: ""
+    val cast = remember { CastControle(ctx, vm.midia.servidor) }
 
     // ---------- player (lê do cache de mídia e grava o que assiste) ----------
     val player = remember {
@@ -146,6 +151,8 @@ fun Reprodutor(vm: DriveViewModel, dados: VideoAberto, st: SharedTransitionScope
     }
 
     var tocando by remember { mutableStateOf(false) }
+    var convertida by remember { mutableStateOf(false) }
+    var jaTransmitiu by remember { mutableStateOf(false) }
     var carregando by remember { mutableStateOf(true) }
     var duracao by remember { mutableLongStateOf(0L) }
     var posicao by remember { mutableLongStateOf(0L) }
@@ -168,8 +175,28 @@ fun Reprodutor(vm: DriveViewModel, dados: VideoAberto, st: SharedTransitionScope
     val arrasto = remember { Animatable(0f) }
 
     fun salvarAgora() {
-        val d = player.duration
-        if (d > 0) vm.salvarProgresso(arquivo, player.currentPosition, d)
+        val d = if (cast.transmitindo) cast.duracao else player.duration
+        val p = if (cast.transmitindo) cast.posicao else player.currentPosition
+        if (d > 0) vm.salvarProgresso(arquivo, p, d)
+    }
+
+    /** Alternativa para formatos que o player não toca: a versão mp4 que o Drive gera (endereço não oficial). */
+    fun tentarConvertida() {
+        convertida = true
+        erro = null
+        carregando = true
+        scope.launch {
+            try {
+                val url = vm.midia.urlConvertida(email, arquivo.id)
+                val item = MediaItem.Builder().setUri(url).setCustomCacheKey(vm.chaveCache(arquivo) + "|conv").build()
+                val pos = player.currentPosition
+                player.setMediaItem(item, pos)
+                player.prepare()
+                player.play()
+            } catch (e: Exception) {
+                erro = "A versão convertida não está disponível: ${e.message}"
+            }
+        }
     }
 
     DisposableEffect(player) {
@@ -193,7 +220,18 @@ fun Reprodutor(vm: DriveViewModel, dados: VideoAberto, st: SharedTransitionScope
                 }
             }
             override fun onPlayerError(error: PlaybackException) {
-                erro = error.errorCodeName + (error.cause?.message?.let { ": $it" } ?: "")
+                val formatoNaoSuportado = error.errorCode in listOf(
+                    PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
+                    PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED,
+                    PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
+                    PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
+                    PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+                )
+                if (formatoNaoSuportado && !convertida) {
+                    tentarConvertida()
+                } else {
+                    erro = error.errorCodeName + (error.cause?.message?.let { ": $it" } ?: "")
+                }
             }
         }
         player.addListener(ouvinte)
@@ -283,6 +321,43 @@ fun Reprodutor(vm: DriveViewModel, dados: VideoAberto, st: SharedTransitionScope
     // Ao sair do app (sem PiP) o vídeo pausa
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
         if (activity?.isInPictureInPictureMode != true) player.pause()
+    }
+
+    // ---------- Chromecast ----------
+    DisposableEffect(cast) {
+        cast.anexar()
+        onDispose { cast.soltar() }
+    }
+    LaunchedEffect(cast.estado) {
+        if (cast.estado == CastState.CONNECTED && !cast.transmitindo) {
+            try {
+                val pos = player.currentPosition
+                player.pause()
+                // O receptor padrão toca mp4/webm; para outros formatos, tenta a versão convertida do Drive.
+                val simples = arquivo.mimeType == "video/mp4" || arquivo.mimeType == "video/webm"
+                val convertidaUrl = if (simples) null else try {
+                    vm.midia.urlConvertida(email, arquivo.id)
+                } catch (e: Exception) {
+                    null
+                }
+                val url = convertidaUrl ?: vm.midia.urlOriginal(arquivo.id)
+                val mime = if (convertidaUrl != null) "video/mp4" else arquivo.mimeType
+                cast.iniciar(arquivo.name, url, mime, pos)
+                jaTransmitiu = true
+            } catch (e: Exception) {
+                erro = "Não foi possível transmitir: ${e.message}"
+                player.play()
+            }
+        } else if (cast.estado != CastState.CONNECTED && cast.transmitindo) {
+            cast.terminouSessao()
+        }
+    }
+    // Ao parar a transmissão, o vídeo continua no celular de onde estava na TV
+    LaunchedEffect(cast.transmitindo) {
+        if (!cast.transmitindo && jaTransmitiu) {
+            player.seekTo(cast.posicao)
+            player.play()
+        }
     }
 
     BackHandler { vm.fecharVideo() }
@@ -439,13 +514,18 @@ fun Reprodutor(vm: DriveViewModel, dados: VideoAberto, st: SharedTransitionScope
                         textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
                     Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = { erro = null; player.prepare() }) { Text("Tentar de novo") }
+                        if (!convertida) TextButton(onClick = { tentarConvertida() }) { Text("Versão convertida") }
                         TextButton(onClick = { vm.fecharVideo() }) { Text("Voltar") }
                     }
                 }
             }
 
+            if (cast.transmitindo) {
+                TelaTransmissao(cast, onVoltar = { vm.fecharVideo() })
+            }
+
             // controles
-            AnimatedVisibility(visible = controles && !emPip && arrasto.value < 1f, modifier = Modifier.align(Alignment.TopCenter)) {
+            AnimatedVisibility(visible = controles && !emPip && !cast.transmitindo && arrasto.value < 1f, modifier = Modifier.align(Alignment.TopCenter)) {
                 Row(
                     Modifier.fillMaxWidth()
                         .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.65f), Color.Transparent)))
@@ -489,6 +569,11 @@ fun Reprodutor(vm: DriveViewModel, dados: VideoAberto, st: SharedTransitionScope
                             }
                         }
                     }
+                    if (cast.disponivel && activity is FragmentActivity) {
+                        IconButton(onClick = { cast.escolherDispositivo(activity) }) {
+                            Icon(Icons.Outlined.Cast, "Transmitir para a TV", tint = Color.White)
+                        }
+                    }
                     IconButton(onClick = { vm.alternarFavorito(arquivo) }) {
                         Icon(
                             if (favorito) Icons.Filled.Star else Icons.Outlined.StarBorder,
@@ -509,7 +594,7 @@ fun Reprodutor(vm: DriveViewModel, dados: VideoAberto, st: SharedTransitionScope
                 }
             }
 
-            AnimatedVisibility(visible = controles && !emPip && arrasto.value < 1f && erro == null, modifier = Modifier.align(Alignment.Center)) {
+            AnimatedVisibility(visible = controles && !emPip && !cast.transmitindo && arrasto.value < 1f && erro == null, modifier = Modifier.align(Alignment.Center)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = { pular(-10_000L) }, modifier = Modifier.size(56.dp)) {
                         Icon(Icons.Outlined.Replay10, "Voltar 10 segundos", tint = Color.White, modifier = Modifier.size(36.dp))
@@ -530,7 +615,7 @@ fun Reprodutor(vm: DriveViewModel, dados: VideoAberto, st: SharedTransitionScope
                 }
             }
 
-            AnimatedVisibility(visible = controles && !emPip && arrasto.value < 1f, modifier = Modifier.align(Alignment.BottomCenter)) {
+            AnimatedVisibility(visible = controles && !emPip && !cast.transmitindo && arrasto.value < 1f, modifier = Modifier.align(Alignment.BottomCenter)) {
                 Column(
                     Modifier.fillMaxWidth()
                         .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.65f))))
@@ -548,6 +633,61 @@ fun Reprodutor(vm: DriveViewModel, dados: VideoAberto, st: SharedTransitionScope
                     }
                 }
             }
+        }
+    }
+}
+
+/** Tela mostrada enquanto o vídeo toca na TV: controles remotos e botão para parar. */
+@Composable
+private fun TelaTransmissao(cast: CastControle, onVoltar: () -> Unit) {
+    var arrastando by remember { mutableStateOf(false) }
+    var posSlider by remember { mutableFloatStateOf(0f) }
+    Box(
+        Modifier.fillMaxSize().background(Color.Black)
+            .pointerInput(Unit) { detectTapGestures { } }, // impede toques de chegar ao player escondido
+    ) {
+        IconButton(onClick = onVoltar, modifier = Modifier.align(Alignment.TopStart).padding(4.dp)) {
+            Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Voltar", tint = Color.White)
+        }
+        Column(
+            Modifier.align(Alignment.Center).padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Icon(Icons.Outlined.Cast, null, tint = Color.White, modifier = Modifier.size(48.dp))
+            Text(
+                "Transmitindo para " + cast.dispositivo.ifEmpty { "a TV" },
+                color = Color.White, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center,
+            )
+            Slider(
+                value = if (arrastando) posSlider else cast.posicao.toFloat(),
+                onValueChange = { arrastando = true; posSlider = it },
+                onValueChangeFinished = { cast.buscar(posSlider.toLong()); arrastando = false },
+                valueRange = 0f..maxOf(1f, cast.duracao.toFloat()),
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(tempo(if (arrastando) posSlider.toLong() else cast.posicao), color = Color.White, style = MaterialTheme.typography.bodySmall)
+                Text(tempo(cast.duracao), color = Color.White, style = MaterialTheme.typography.bodySmall)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { cast.pular(-10_000L) }, modifier = Modifier.size(56.dp)) {
+                    Icon(Icons.Outlined.Replay10, "Voltar 10 segundos", tint = Color.White, modifier = Modifier.size(36.dp))
+                }
+                IconButton(
+                    onClick = { cast.alternar() },
+                    modifier = Modifier.size(72.dp).background(Color.White.copy(alpha = 0.15f), androidx.compose.foundation.shape.CircleShape),
+                ) {
+                    Icon(
+                        if (cast.tocando) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        if (cast.tocando) "Pausar" else "Reproduzir",
+                        tint = Color.White, modifier = Modifier.size(44.dp),
+                    )
+                }
+                IconButton(onClick = { cast.pular(10_000L) }, modifier = Modifier.size(56.dp)) {
+                    Icon(Icons.Outlined.Forward10, "Avançar 10 segundos", tint = Color.White, modifier = Modifier.size(36.dp))
+                }
+            }
+            TextButton(onClick = { cast.parar(encerrarSessao = true) }) { Text("Parar transmissão") }
         }
     }
 }
