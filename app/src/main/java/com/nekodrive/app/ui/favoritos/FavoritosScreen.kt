@@ -1,0 +1,145 @@
+package com.nekodrive.app.ui.favoritos
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ViewList
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import com.nekodrive.app.data.drive.DriveFile
+import com.nekodrive.app.ui.drive.DriveViewModel
+import com.nekodrive.app.ui.drive.ItemGrade
+import com.nekodrive.app.ui.drive.ItemLinha
+
+private const val CHAVE = "favoritos"
+
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+fun FavoritosScreen(vm: DriveViewModel, st: SharedTransitionScope, av: AnimatedVisibilityScope, modifier: Modifier = Modifier) {
+    var confirmar by remember { mutableStateOf(false) }
+    BackHandler(enabled = vm.selecionados.isNotEmpty()) { vm.limparSelecao() }
+    LaunchedEffect(vm.contaAtual?.email) { vm.carregarFavoritos() }
+
+    val lista = vm.favoritosItens.filter { it.id !in vm.indisponiveis }
+    val aoTocar: (DriveFile) -> Unit = { f ->
+        if (vm.selecionados.isNotEmpty()) vm.alternarSelecao(f)
+        else if (f.isImage) vm.abrirFoto(f, lista, CHAVE)
+        else if (f.isVideo) vm.abrirVideo(f, lista, CHAVE)
+    }
+
+    Column(modifier.fillMaxSize()) {
+        if (vm.selecionados.isNotEmpty()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { vm.limparSelecao() }) { Icon(Icons.Outlined.Close, "Cancelar seleção") }
+                Text("${vm.selecionados.size} selecionado(s)", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                IconButton(onClick = { vm.favoritarSelecao(lista) }) { Icon(Icons.Filled.Star, "Remover dos favoritos") }
+                IconButton(onClick = { vm.baixarSelecionados() }) { Icon(Icons.Outlined.Download, "Baixar") }
+                IconButton(onClick = { confirmar = true }) { Icon(Icons.Outlined.Delete, "Mover para a lixeira") }
+            }
+        } else {
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Favoritos", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                IconButton(onClick = { vm.alternarModo() }) {
+                    Icon(
+                        if (vm.grade) Icons.AutoMirrored.Outlined.ViewList else Icons.Outlined.GridView,
+                        "Alternar entre grade e lista",
+                    )
+                }
+            }
+        }
+
+        if (vm.indisponiveis.isNotEmpty()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "${vm.indisponiveis.size} favorito(s) não estão mais no Drive.",
+                    Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                TextButton(onClick = { vm.removerIndisponiveis() }) { Text("Remover da lista") }
+            }
+        }
+
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            if (vm.grade) {
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(110.dp),
+                    state = vm.estadoGrade(CHAVE),
+                    contentPadding = PaddingValues(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    items(lista, key = { it.id }) { f ->
+                        ItemGrade(
+                            f, vm.token, f.id in vm.selecionados, vm.estadoDe(f), st, av, av,
+                            { aoTocar(f) }, { vm.alternarSelecao(f) },
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(Modifier.fillMaxSize(), state = vm.estadoLista(CHAVE)) {
+                    items(lista, key = { it.id }) { f ->
+                        ItemLinha(
+                            f, vm.token, f.id in vm.selecionados, vm.estadoDe(f), st, av, av,
+                            { aoTocar(f) }, { vm.alternarSelecao(f) },
+                        )
+                    }
+                }
+            }
+            if (lista.isEmpty()) {
+                Text(
+                    "Nenhum favorito ainda.\nSegure um arquivo e toque na estrela.",
+                    Modifier.align(Alignment.Center).padding(32.dp),
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+
+    if (confirmar) {
+        AlertDialog(
+            onDismissRequest = { confirmar = false },
+            title = { Text("Mover para a lixeira?") },
+            text = { Text("${vm.selecionados.size} item(ns) vão para a lixeira do Drive e saem dos favoritos.") },
+            confirmButton = { TextButton(onClick = { confirmar = false; vm.moverParaLixeira() }) { Text("Mover") } },
+            dismissButton = { TextButton(onClick = { confirmar = false }) { Text("Cancelar") } },
+        )
+    }
+}
