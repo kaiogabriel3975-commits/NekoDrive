@@ -135,26 +135,10 @@ fun Reprodutor(vm: DriveViewModel, dados: VideoAberto, st: SharedTransitionScope
     val activity = remember(ctx) { ctx.encontrarActivity() }
     val scope = rememberCoroutineScope()
 
-    // ---------- token do Drive (renovado de tempos em tempos) ----------
-    val tokenRef = remember { AtomicReference<String?>(vm.token) }
-    LaunchedEffect(vm.token) { tokenRef.set(vm.token) }
-    LaunchedEffect(Unit) {
-        vm.renovarToken()
-        while (true) {
-            delay(40 * 60_000L)
-            vm.renovarToken()
-        }
-    }
-
-    // ---------- player ----------
+    // ---------- player (lê do cache de mídia e grava o que assiste) ----------
     val player = remember {
-        val cliente = OkHttpClient.Builder().addInterceptor { chain ->
-            val t = tokenRef.get()
-            val req = if (t != null) chain.request().newBuilder().header("Authorization", "Bearer $t").build() else chain.request()
-            chain.proceed(req)
-        }.build()
         ExoPlayer.Builder(ctx)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(OkHttpDataSource.Factory(cliente)))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(vm.midia.fabrica()))
             .build()
     }
 
@@ -228,6 +212,7 @@ fun Reprodutor(vm: DriveViewModel, dados: VideoAberto, st: SharedTransitionScope
         }
         val item = MediaItem.Builder()
             .setUri(API + arquivo.id + "?alt=media")
+            .setCustomCacheKey(vm.chaveCache(arquivo))
             .setSubtitleConfigurations(legendas)
             .build()
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
