@@ -81,6 +81,7 @@ fun NekoDriveApp() {
 
     var atual by rememberSaveable { mutableStateOf(Destino.Drive) }
     var mostrarContas by rememberSaveable { mutableStateOf(false) }
+    var mostrarConfig by rememberSaveable { mutableStateOf(false) }
     // Etapa 1-2: barras translúcidas. O blur real (Haze) entra na etapa de polimento.
     val vidro = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
 
@@ -153,7 +154,7 @@ fun NekoDriveApp() {
                     IconButton(onClick = { mostrarContas = true }) {
                         Icon(Icons.Outlined.AccountCircle, contentDescription = "Contas")
                     }
-                    IconButton(onClick = { /* etapa 8: configurações */ }) {
+                    IconButton(onClick = { mostrarConfig = true }) {
                         Icon(Icons.Outlined.Settings, contentDescription = "Configurações")
                     }
                 },
@@ -197,4 +198,7 @@ fun NekoDriveApp() {
         )
     }
     if (vm.detalhes != null) DetalhesSheet(vm)
+    if (mostrarConfig) {
+        ConfiguracoesSheet(vm, onContas = { mostrarContas = true }, onFechar = { mostrarConfig = false })
+    }
 }
