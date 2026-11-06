@@ -5,6 +5,13 @@ import android.app.Activity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -32,7 +39,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -49,6 +58,9 @@ import com.nekodrive.app.NekoDriveApplication
 import com.nekodrive.app.ui.drive.ContasSheet
 import com.nekodrive.app.ui.drive.DriveScreen
 import com.nekodrive.app.ui.drive.DriveViewModel
+import com.nekodrive.app.ui.drive.FotosAbertas
+import com.nekodrive.app.ui.viewer.DetalhesSheet
+import com.nekodrive.app.ui.viewer.Visualizador
 import kotlinx.coroutines.launch
 
 enum class Destino(val rotulo: String, val icone: ImageVector, val iconeSelecionado: ImageVector) {
@@ -57,7 +69,7 @@ enum class Destino(val rotulo: String, val icone: ImageVector, val iconeSelecion
     Lixeira("Lixeira", Icons.Outlined.Delete, Icons.Filled.Delete),
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
 @Composable
 fun NekoDriveApp() {
     val context = LocalContext.current
@@ -104,6 +116,22 @@ fun NekoDriveApp() {
         escolherConta.launch(intent)
     }
 
+    val ultimo = remember { mutableStateOf<FotosAbertas?>(null) }
+    if (vm.visualizador != null) SideEffect { ultimo.value = vm.visualizador }
+
+    SharedTransitionLayout {
+        val st = this
+        AnimatedContent(
+            targetState = vm.visualizador != null,
+            transitionSpec = { fadeIn(tween(240)) togetherWith fadeOut(tween(240)) },
+            label = "visualizador",
+        ) { aberto ->
+            val av = this
+            // Guarda a última lista aberta para a tela de saída não ficar vazia durante a animação.
+            val dados = vm.visualizador ?: ultimo.value
+            if (aberto && dados != null) {
+                Visualizador(vm, dados, st, av)
+            } else {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -139,10 +167,14 @@ fun NekoDriveApp() {
         },
     ) { padding ->
         if (atual == Destino.Drive) {
-            DriveScreen(vm, onEntrar = entrar, modifier = Modifier.padding(padding))
+            DriveScreen(vm, onEntrar = entrar, st = st, avExterno = av, modifier = Modifier.padding(padding))
         } else {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Text(atual.rotulo, style = MaterialTheme.typography.titleLarge)
+            }
+        }
+    }
+
             }
         }
     }
@@ -157,4 +189,5 @@ fun NekoDriveApp() {
             onFechar = { mostrarContas = false },
         )
     }
+    if (vm.detalhes != null) DetalhesSheet(vm)
 }
