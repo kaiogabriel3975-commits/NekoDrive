@@ -111,3 +111,11 @@ O workflow se recusa a rodar se `KEYSTORE_BASE64` já existir, para você não t
 - Lixeira: lista os itens da lixeira do Drive; toque longo seleciona; restaurar, excluir definitivamente e esvaziar (com duas confirmações)
 - Mover para a lixeira (aba Drive ou Favoritos) tira o item dos favoritos
 - Restaurar atualiza a aba Drive
+
+## Etapa 8: Chromecast e versão convertida
+
+- Ícone de Cast na barra do player: escolhe o dispositivo da rede; o vídeo passa a tocar na TV e o celular vira controle (pausar, ±10 s, barra, parar). Parar continua o vídeo no celular de onde estava na TV
+- A TV busca o vídeo em um servidor local no celular, que repassa o conteúdo do Drive com o token da conta. Celular e TV precisam estar na mesma rede Wi-Fi
+- Formatos que o receptor padrão do Chromecast não toca (por exemplo MKV) tentam a versão convertida do Drive
+- Versão convertida: se o player local não tocar o arquivo (AVI, codecs sem suporte), o app tenta sozinho a versão mp4 que o Drive gera. Usa um endereço NÃO oficial do Drive (get_video_info), que pode mudar ou parar de funcionar; legendas laterais não valem nesse modo
+- Android 17: o app mira o SDK 35, então a permissão de rede local (ACCESS_LOCAL_NETWORK) é concedida implicitamente. Se um dia o targetSdk subir para 37 ou mais, será preciso pedi-la
