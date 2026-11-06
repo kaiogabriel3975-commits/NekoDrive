@@ -102,3 +102,12 @@ O workflow se recusa a rodar se `KEYSTORE_BASE64` já existir, para você não t
 - Configurações: tela inicial (grade ou lista), contas, limite e limpar cache
 - O Android pode limpar o cache do app quando falta espaço
 - Downloads continuam com o app em segundo plano enquanto o Android mantiver o processo; baixar de novo retoma de onde parou
+
+## Etapa 7: favoritos e lixeira
+
+- Favoritar: botão de estrela na seleção em lote, no visualizador de fotos e no player. Só arquivos (não pastas)
+- Favoritos ficam só no app (não mexem na estrela do Drive), separados por conta; itens favoritos mostram uma estrela na miniatura
+- Aba Favoritos: grade ou lista; abre fotos e vídeos; avisa quando um favorito não existe mais no Drive e permite limpar a lista
+- Lixeira: lista os itens da lixeira do Drive; toque longo seleciona; restaurar, excluir definitivamente e esvaziar (com duas confirmações)
+- Mover para a lixeira (aba Drive ou Favoritos) tira o item dos favoritos
+- Restaurar atualiza a aba Drive
