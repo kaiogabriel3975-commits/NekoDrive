@@ -10,7 +10,9 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.io.IOException
 
 data class DriveFile(
@@ -78,6 +80,41 @@ class DriveRepository(private val auth: AuthManager) {
                 Request.Builder().url(api + "files/" + id).patch(corpo)
                     .header("Authorization", "Bearer $token").build(),
             )
+        }
+    }
+
+    /** Todos os campos que a API devolve para o arquivo (`fields=*`), em lista chave/valor. */
+    suspend fun detalhes(email: String, id: String): List<Pair<String, String>> =
+        comToken(email) { token ->
+            val url = (api + "files/" + id).toHttpUrl().newBuilder().addQueryParameter("fields", "*").build()
+            val saida = mutableListOf<Pair<String, String>>()
+            achatar("", JSONObject(get(token, url)), saida)
+            saida.sortedBy { it.first }
+        }
+
+    private fun achatar(prefixo: String, valor: Any?, saida: MutableList<Pair<String, String>>) {
+        when (valor) {
+            is JSONObject -> valor.keys().forEach { k ->
+                achatar(if (prefixo.isEmpty()) k else "$prefixo.$k", valor.get(k), saida)
+            }
+            is JSONArray -> for (i in 0 until valor.length()) achatar("$prefixo[$i]", valor.get(i), saida)
+            else -> saida += prefixo to valor.toString()
+        }
+    }
+
+    /** Baixa o conteúdo original do arquivo para [destino]. */
+    suspend fun baixar(email: String, id: String, destino: File) {
+        comToken(email) { token ->
+            val url = (api + "files/" + id).toHttpUrl().newBuilder().addQueryParameter("alt", "media").build()
+            val req = Request.Builder().url(url).header("Authorization", "Bearer $token").build()
+            http.newCall(req).execute().use { resp ->
+                if (resp.code == 401) throw UnauthorizedException()
+                if (!resp.isSuccessful) throw IOException(mensagemDeErro(resp.code, resp.body?.string().orEmpty()))
+                destino.parentFile?.mkdirs()
+                resp.body!!.byteStream().use { entrada ->
+                    destino.outputStream().use { saida -> entrada.copyTo(saida) }
+                }
+            }
         }
     }
 
