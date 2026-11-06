@@ -32,6 +32,8 @@ data class DrivePage(val files: List<DriveFile>, val nextPageToken: String?)
 
 class UnauthorizedException : IOException("Sessão expirada")
 
+class DriveHttpException(val code: Int, mensagem: String) : IOException(mensagem)
+
 class DriveRepository(private val auth: AuthManager) {
     private val http = OkHttpClient()
     private val api = "https://www.googleapis.com/drive/v3/"
@@ -118,6 +120,55 @@ class DriveRepository(private val auth: AuthManager) {
         }
     }
 
+    /** Metadados atuais de um arquivo; null se não existir mais ou se estiver na lixeira. */
+    suspend fun arquivo(email: String, id: String): DriveFile? = comToken(email) { token ->
+        val url = (api + "files/" + id).toHttpUrl().newBuilder()
+            .addQueryParameter("fields", "id,name,mimeType,size,modifiedTime,thumbnailLink,trashed")
+            .build()
+        try {
+            val o = JSONObject(get(token, url))
+            if (o.optBoolean("trashed")) {
+                null
+            } else {
+                DriveFile(
+                    id = o.getString("id"),
+                    name = o.optString("name"),
+                    mimeType = o.optString("mimeType"),
+                    size = o.optString("size").toLongOrNull(),
+                    modifiedTime = o.optString("modifiedTime").ifEmpty { null },
+                    thumbnailLink = o.optString("thumbnailLink").ifEmpty { null },
+                )
+            }
+        } catch (e: DriveHttpException) {
+            if (e.code == 404) null else throw e
+        }
+    }
+
+    /** Tira um item da lixeira. */
+    suspend fun restaurar(email: String, id: String) {
+        comToken(email) { token ->
+            val corpo = """{"trashed":false}""".toRequestBody("application/json".toMediaType())
+            executar(
+                Request.Builder().url(api + "files/" + id).patch(corpo)
+                    .header("Authorization", "Bearer $token").build(),
+            )
+        }
+    }
+
+    /** Exclui para sempre um item (só deve ser usado na lixeira). */
+    suspend fun excluirDefinitivo(email: String, id: String) {
+        comToken(email) { token ->
+            executar(Request.Builder().url(api + "files/" + id).delete().header("Authorization", "Bearer $token").build())
+        }
+    }
+
+    /** Apaga para sempre tudo que está na lixeira da conta. */
+    suspend fun esvaziarLixeira(email: String) {
+        comToken(email) { token ->
+            executar(Request.Builder().url(api + "files/trash").delete().header("Authorization", "Bearer $token").build())
+        }
+    }
+
     /** Identifica a conta dona do token (e-mail, nome e foto) pela própria API do Drive. */
     suspend fun about(token: String): GoogleAccount = withContext(Dispatchers.IO) {
         val url = (api + "about").toHttpUrl().newBuilder()
@@ -138,7 +189,7 @@ class DriveRepository(private val auth: AuthManager) {
         http.newCall(req).execute().use { resp ->
             val body = resp.body?.string().orEmpty()
             if (resp.code == 401) throw UnauthorizedException()
-            if (!resp.isSuccessful) throw IOException(mensagemDeErro(resp.code, body))
+            if (!resp.isSuccessful) throw DriveHttpException(resp.code, mensagemDeErro(resp.code, body))
             body
         }
 
