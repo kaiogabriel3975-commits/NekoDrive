@@ -39,6 +39,8 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.DownloadDone
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.RotateRight
 import androidx.compose.material3.CircularProgressIndicator
@@ -77,6 +79,7 @@ import com.nekodrive.app.data.drive.DriveFile
 import com.nekodrive.app.ui.drive.DriveViewModel
 import com.nekodrive.app.ui.drive.FotosAbertas
 import com.nekodrive.app.ui.drive.pastaBounds
+import java.io.File
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalFoundationApi::class)
@@ -144,8 +147,10 @@ fun Visualizador(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionSc
                 userScrollEnabled = !zoomado,
                 key = { dados.fotos[it].id },
             ) { i ->
+                val local = remember(dados.fotos[i].id, vm.versaoCache) { vm.arquivoLocal(dados.fotos[i]) }
                 PaginaFoto(
                     f = dados.fotos[i],
+                    arquivoLocal = local,
                     token = vm.token,
                     giro = giros[dados.fotos[i].id] ?: 0,
                     ehAtual = i == pager.currentPage,
@@ -181,6 +186,13 @@ fun Visualizador(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionSc
                     IconButton(onClick = { giros[atual.id] = ((giros[atual.id] ?: 0) + 1) % 4 }) {
                         Icon(Icons.Outlined.RotateRight, "Girar", tint = Color.White)
                     }
+                    val salva = vm.estadoDe(atual).noCache
+                    IconButton(onClick = { vm.baixar(atual) }) {
+                        Icon(
+                            if (salva) Icons.Outlined.DownloadDone else Icons.Outlined.Download,
+                            if (salva) "Salvo no cache" else "Baixar", tint = Color.White,
+                        )
+                    }
                     IconButton(onClick = copiar) {
                         Icon(Icons.Outlined.ContentCopy, "Copiar imagem", tint = Color.White)
                     }
@@ -198,6 +210,7 @@ fun Visualizador(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionSc
 @Composable
 private fun PaginaFoto(
     f: DriveFile,
+    arquivoLocal: File?,
     token: String?,
     giro: Int,
     ehAtual: Boolean,
@@ -260,7 +273,7 @@ private fun PaginaFoto(
                 },
         ) {
             val original = ImageRequest.Builder(ctx)
-                .data("https://www.googleapis.com/drive/v3/files/${f.id}?alt=media")
+                .data(arquivoLocal ?: "https://www.googleapis.com/drive/v3/files/${f.id}?alt=media")
                 .apply { if (token != null) addHeader("Authorization", "Bearer $token") }
                 .size(2400, 2400)
                 .crossfade(true)
