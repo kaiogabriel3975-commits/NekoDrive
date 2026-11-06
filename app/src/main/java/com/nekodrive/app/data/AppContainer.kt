@@ -10,6 +10,7 @@ import com.nekodrive.app.data.drive.DriveRepository
 class AppContainer(context: Context) {
     val accounts = AccountStore(context)
     val prefs = ViewPrefs(context)
+    val playback = PlaybackStore(context)
     val cacheDir: File = context.cacheDir
     val auth = AuthManager(context)
     val drive = DriveRepository(auth)
