@@ -38,7 +38,9 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.DownloadDone
 import androidx.compose.material.icons.outlined.Info
@@ -186,7 +188,15 @@ fun Visualizador(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionSc
                     IconButton(onClick = { giros[atual.id] = ((giros[atual.id] ?: 0) + 1) % 4 }) {
                         Icon(Icons.Outlined.RotateRight, "Girar", tint = Color.White)
                     }
-                    val salva = vm.estadoDe(atual).noCache
+                    val estadoAtual = vm.estadoDe(atual)
+                    val salva = estadoAtual.noCache
+                    IconButton(onClick = { vm.alternarFavorito(atual) }) {
+                        Icon(
+                            if (estadoAtual.favorito) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                            if (estadoAtual.favorito) "Remover dos favoritos" else "Favoritar",
+                            tint = if (estadoAtual.favorito) Color(0xFFFFC107) else Color.White,
+                        )
+                    }
                     IconButton(onClick = { vm.baixar(atual) }) {
                         Icon(
                             if (salva) Icons.Outlined.DownloadDone else Icons.Outlined.Download,
