@@ -91,3 +91,14 @@ O workflow se recusa a rodar se `KEYSTORE_BASE64` já existir, para você não t
 - Retoma de onde parou; passou de 90% vira "assistido" (usado na etapa 6, cache e limpeza)
 - Formatos que o ExoPlayer não toca (ex.: AVI) mostram erro; a versão convertida do Drive entra na etapa 8
 - Chromecast: etapa 8
+
+## Etapa 6: cache, downloads e configurações
+
+- Um cache único (pasta de cache do app) guarda tudo que é assistido e tudo que é baixado, para vídeos e fotos
+- Baixar: toque longo para selecionar e use o botão de baixar (só arquivos, não pastas); no visualizador de fotos há um botão de baixar
+- Itens salvos mostram um ícone de download concluído; vídeos assistidos (90% ou mais) mostram um ícone de visto; o download mostra o progresso
+- Limite de GB ajustável em Configurações (padrão 5 GB). Ao passar do limite, o que foi usado há mais tempo é apagado primeiro
+- Vídeos e fotos já salvos abrem sem internet
+- Configurações: tela inicial (grade ou lista), contas, limite e limpar cache
+- O Android pode limpar o cache do app quando falta espaço
+- Downloads continuam com o app em segundo plano enquanto o Android mantiver o processo; baixar de novo retoma de onde parou
