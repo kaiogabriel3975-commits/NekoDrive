@@ -38,6 +38,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.ClosedCaption
 import androidx.compose.material.icons.outlined.Forward10
 import androidx.compose.material.icons.outlined.PictureInPictureAlt
@@ -134,6 +136,7 @@ fun Reprodutor(vm: DriveViewModel, dados: VideoAberto, st: SharedTransitionScope
     val ctx = LocalContext.current
     val activity = remember(ctx) { ctx.encontrarActivity() }
     val scope = rememberCoroutineScope()
+    val favorito = vm.estadoDe(arquivo).favorito
 
     // ---------- player (lê do cache de mídia e grava o que assiste) ----------
     val player = remember {
@@ -485,6 +488,13 @@ fun Reprodutor(vm: DriveViewModel, dados: VideoAberto, st: SharedTransitionScope
                                 )
                             }
                         }
+                    }
+                    IconButton(onClick = { vm.alternarFavorito(arquivo) }) {
+                        Icon(
+                            if (favorito) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                            if (favorito) "Remover dos favoritos" else "Favoritar",
+                            tint = if (favorito) Color(0xFFFFC107) else Color.White,
+                        )
                     }
                     if (activity != null) {
                         IconButton(onClick = {
