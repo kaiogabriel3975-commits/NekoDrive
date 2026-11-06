@@ -29,6 +29,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Sort
@@ -37,11 +38,14 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.DownloadDone
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -152,6 +156,7 @@ private fun Barra(vm: DriveViewModel, aoExcluir: () -> Unit) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { vm.limparSelecao() }) { Icon(Icons.Outlined.Close, "Cancelar seleção") }
             Text("${vm.selecionados.size} selecionado(s)", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+            IconButton(onClick = { vm.baixarSelecionados() }) { Icon(Icons.Outlined.Download, "Baixar") }
             IconButton(onClick = aoExcluir) { Icon(Icons.Outlined.Delete, "Mover para a lixeira") }
         }
     } else if (vm.buscando) {
@@ -241,7 +246,7 @@ private fun PaginaPasta(
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     items(lista, key = { it.id }) { f ->
-                        ItemGrade(f, vm.token, f.id in vm.selecionados, st, av, avExterno, { aoTocar(f) }, { vm.alternarSelecao(f) })
+                        ItemGrade(f, vm.token, f.id in vm.selecionados, vm.estadoDe(f), st, av, avExterno, { aoTocar(f) }, { vm.alternarSelecao(f) })
                     }
                     if (atual && vm.temMais) {
                         item(span = { GridItemSpan(maxLineSpan) }) { CarregandoMais(vm) }
@@ -250,7 +255,7 @@ private fun PaginaPasta(
             } else {
                 LazyColumn(Modifier.fillMaxSize(), state = vm.estadoLista(chave)) {
                     items(lista, key = { it.id }) { f ->
-                        ItemLinha(f, vm.token, f.id in vm.selecionados, st, av, avExterno, { aoTocar(f) }, { vm.alternarSelecao(f) })
+                        ItemLinha(f, vm.token, f.id in vm.selecionados, vm.estadoDe(f), st, av, avExterno, { aoTocar(f) }, { vm.alternarSelecao(f) })
                     }
                     if (atual && vm.temMais) {
                         item { CarregandoMais(vm) }
@@ -284,7 +289,7 @@ private fun CarregandoMais(vm: DriveViewModel) {
 // ---------- itens ----------
 
 @Composable
-private fun Miniatura(f: DriveFile, token: String?, tamanhoIcone: Dp, modifier: Modifier = Modifier) {
+private fun Miniatura(f: DriveFile, token: String?, estado: EstadoArquivo, tamanhoIcone: Dp, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     Box(modifier.background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
         if (f.thumbnailLink != null && !f.isFolder) {
@@ -306,6 +311,27 @@ private fun Miniatura(f: DriveFile, token: String?, tamanhoIcone: Dp, modifier: 
                 tint = if (f.isFolder) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        val progresso = estado.progresso
+        if (progresso != null && progresso >= 0f) {
+            CircularProgressIndicator(
+                progress = { progresso },
+                modifier = Modifier.align(Alignment.BottomStart).padding(4.dp).size(20.dp),
+                strokeWidth = 2.dp,
+            )
+        } else if (estado.noCache) {
+            Icon(
+                Icons.Outlined.DownloadDone, "Salvo no cache", tint = Color.White,
+                modifier = Modifier.align(Alignment.BottomStart).padding(4.dp)
+                    .background(Color.Black.copy(alpha = 0.55f), CircleShape).padding(3.dp).size(14.dp),
+            )
+        }
+        if (estado.assistido) {
+            Icon(
+                Icons.Outlined.TaskAlt, "Assistido", tint = Color.White,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp)
+                    .background(Color.Black.copy(alpha = 0.55f), CircleShape).padding(3.dp).size(14.dp),
+            )
+        }
     }
 }
 
@@ -315,6 +341,7 @@ private fun ItemGrade(
     f: DriveFile,
     token: String?,
     selecionado: Boolean,
+    estado: EstadoArquivo,
     st: SharedTransitionScope,
     av: AnimatedVisibilityScope,
     avExterno: AnimatedVisibilityScope,
@@ -330,7 +357,7 @@ private fun ItemGrade(
     }
     Card(modifier = base.combinedClickable(onClick = onClick, onLongClick = onLongClick), border = borda) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
-            Miniatura(f, token, 44.dp, Modifier.fillMaxSize())
+            Miniatura(f, token, estado, 44.dp, Modifier.fillMaxSize())
             if (selecionado) {
                 Icon(
                     Icons.Filled.CheckCircle, contentDescription = "Selecionado",
@@ -355,6 +382,7 @@ private fun ItemLinha(
     f: DriveFile,
     token: String?,
     selecionado: Boolean,
+    estado: EstadoArquivo,
     st: SharedTransitionScope,
     av: AnimatedVisibilityScope,
     avExterno: AnimatedVisibilityScope,
@@ -375,7 +403,7 @@ private fun ItemLinha(
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Miniatura(f, token, 28.dp, Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)))
+        Miniatura(f, token, estado, 28.dp, Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)))
         Column(Modifier.weight(1f).padding(start = 12.dp)) {
             Text(f.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
             val sub = listOfNotNull(formatarData(f.modifiedTime), formatarTamanho(f.size)).joinToString("  ·  ")

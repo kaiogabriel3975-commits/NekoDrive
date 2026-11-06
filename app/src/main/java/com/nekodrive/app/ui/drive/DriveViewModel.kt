@@ -3,6 +3,8 @@ package com.nekodrive.app.ui.drive
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
@@ -16,11 +18,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.UnknownHostException
 
 data class Pasta(val id: String, val nome: String)
+
+/** Situação de um arquivo na lista: salvo no cache, assistido, ou baixando (progresso de 0 a 1). */
+data class EstadoArquivo(val noCache: Boolean, val assistido: Boolean, val progresso: Float?)
 
 /** Fotos abertas no visualizador (somente as imagens da lista atual) e a foto em exibição. */
 data class FotosAbertas(val fotos: List<DriveFile>, val indice: Int)
@@ -57,6 +63,13 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     var visualizador by mutableStateOf<FotosAbertas?>(null); private set
     var video by mutableStateOf<VideoAberto?>(null); private set
 
+    /** Muda quando o cache ou o progresso mudam, para as listas se atualizarem. */
+    var versaoCache by mutableIntStateOf(0); private set
+    var limiteGb by mutableIntStateOf(c.prefs.limiteGb); private set
+    val progressos = mutableStateMapOf<String, Float>()
+    private val tarefas = HashMap<String, Job>()
+    val midia get() = c.midia
+
     /** null = folha de detalhes fechada. */
     var detalhes by mutableStateOf<List<Pair<String, String>>?>(null); private set
     var tituloDetalhes by mutableStateOf(""); private set
@@ -72,6 +85,7 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
 
     init {
         contaAtual = contas.firstOrNull { it.email == c.accounts.currentEmail } ?: contas.firstOrNull()
+        c.midia.definirConta(contaAtual?.email)
         recarregar()
     }
 
@@ -304,6 +318,7 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
         viewModelScope.launch {
             garantirVisivel(v.arquivo.id)
             video = null
+            versaoCache++
         }
     }
 
@@ -353,6 +368,60 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
         return arquivo
     }
 
+    // ---------- cache e downloads ----------
+
+    fun chaveCache(f: DriveFile): String = c.midia.chave(contaAtual?.email ?: "", f.id)
+
+    fun arquivoLocal(f: DriveFile): java.io.File? = contaAtual?.let { c.midia.arquivoLocal(it.email, f) }
+
+    fun estadoDe(f: DriveFile): EstadoArquivo {
+        val versao = versaoCache // lê o contador para a lista se atualizar quando ele mudar
+        val conta = contaAtual
+        if (conta == null || versao < 0) return EstadoArquivo(false, false, null)
+        return EstadoArquivo(
+            noCache = !f.isFolder && c.midia.completo(conta.email, f),
+            assistido = f.isVideo && c.playback.obter(conta.email, f.id)?.assistido == true,
+            progresso = progressos[f.id],
+        )
+    }
+
+    fun baixar(f: DriveFile) {
+        val conta = contaAtual ?: return
+        if (f.isFolder || tarefas[f.id]?.isActive == true || c.midia.completo(conta.email, f)) return
+        progressos[f.id] = 0f
+        tarefas[f.id] = c.escopo.launch {
+            try {
+                c.semaforo.withPermit { c.midia.baixar(conta.email, f) { p -> progressos[f.id] = p } }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                erro = "Falha ao baixar ${f.name}: ${e.message}"
+            } finally {
+                progressos.remove(f.id)
+                versaoCache++
+            }
+        }
+    }
+
+    fun baixarSelecionados() {
+        itens.filter { it.id in selecionados && !it.isFolder }.forEach { baixar(it) }
+        selecionados = emptySet()
+    }
+
+    fun tamanhoCache(): Long = c.midia.tamanhoTotal()
+
+    fun definirLimiteGb(gb: Int) {
+        limiteGb = gb
+        c.prefs.limiteGb = gb
+        c.midia.definirLimite(gb)
+        versaoCache++
+    }
+
+    fun limparCache() {
+        c.midia.limpar()
+        versaoCache++
+    }
+
     // ---------- contas ----------
 
     fun aoAutorizar(accessToken: String?) {
@@ -377,6 +446,7 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
 
     fun selecionar(conta: GoogleAccount) {
         contaAtual = conta
+        c.midia.definirConta(conta.email)
         c.accounts.currentEmail = conta.email
         pilha = listOf(raiz)
         buscando = false; termo = ""
@@ -393,6 +463,7 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
                 selecionar(outra)
             } else {
                 contaAtual = null
+                c.midia.definirConta(null)
                 c.accounts.currentEmail = null
                 pilha = listOf(raiz)
                 buscando = false; termo = ""
