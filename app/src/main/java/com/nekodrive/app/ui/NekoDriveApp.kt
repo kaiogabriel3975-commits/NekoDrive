@@ -56,6 +56,8 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.nekodrive.app.NekoDriveApplication
 import com.nekodrive.app.ui.drive.ContasSheet
+import com.nekodrive.app.ui.favoritos.FavoritosScreen
+import com.nekodrive.app.ui.lixeira.LixeiraScreen
 import com.nekodrive.app.ui.drive.DriveScreen
 import com.nekodrive.app.ui.drive.DriveViewModel
 import com.nekodrive.app.ui.drive.FotosAbertas
@@ -166,7 +168,7 @@ fun NekoDriveApp() {
                 Destino.entries.forEach { d ->
                     NavigationBarItem(
                         selected = atual == d,
-                        onClick = { atual = d },
+                        onClick = { atual = d; vm.limparSelecao() },
                         icon = { Icon(if (atual == d) d.iconeSelecionado else d.icone, contentDescription = d.rotulo) },
                         label = { Text(d.rotulo) },
                     )
@@ -174,12 +176,10 @@ fun NekoDriveApp() {
             }
         },
     ) { padding ->
-        if (atual == Destino.Drive) {
-            DriveScreen(vm, onEntrar = entrar, st = st, avExterno = av, modifier = Modifier.padding(padding))
-        } else {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text(atual.rotulo, style = MaterialTheme.typography.titleLarge)
-            }
+        when (atual) {
+            Destino.Drive -> DriveScreen(vm, onEntrar = entrar, st = st, avExterno = av, modifier = Modifier.padding(padding))
+            Destino.Favoritos -> FavoritosScreen(vm, st, av, Modifier.padding(padding))
+            Destino.Lixeira -> LixeiraScreen(vm, st, av, Modifier.padding(padding))
         }
     }
 
