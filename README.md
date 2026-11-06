@@ -72,3 +72,11 @@ O workflow se recusa a rodar se `KEYSTORE_BASE64` já existir, para você não t
 - A pasta se expande ao tocar (transição de elemento compartilhado); voltar restaura a lista na hora
 - Toque longo seleciona vários itens; por enquanto a ação em lote é mover para a lixeira (com confirmação)
 - Favoritar e baixar entram na barra de seleção nas etapas 6 e 7
+
+## Etapa 4: visualizador de fotos
+
+- Tocar numa foto abre o visualizador em tela cheia, com a foto expandindo a partir da miniatura
+- Deslizar para os lados troca de foto (mola ao soltar); pinça dá zoom; arrastar para baixo fecha
+- Toque na foto mostra/esconde as barras. Botões: girar (só visual), copiar a imagem e detalhes
+- Detalhes mostram todos os campos que a API do Drive devolve
+- A rolagem de cada pasta agora é guardada (ao voltar de uma pasta ou fechar uma foto)
