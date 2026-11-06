@@ -59,6 +59,8 @@ import com.nekodrive.app.ui.drive.ContasSheet
 import com.nekodrive.app.ui.drive.DriveScreen
 import com.nekodrive.app.ui.drive.DriveViewModel
 import com.nekodrive.app.ui.drive.FotosAbertas
+import com.nekodrive.app.ui.drive.VideoAberto
+import com.nekodrive.app.ui.player.Reprodutor
 import com.nekodrive.app.ui.viewer.DetalhesSheet
 import com.nekodrive.app.ui.viewer.Visualizador
 import kotlinx.coroutines.launch
@@ -118,19 +120,24 @@ fun NekoDriveApp() {
 
     val ultimo = remember { mutableStateOf<FotosAbertas?>(null) }
     if (vm.visualizador != null) SideEffect { ultimo.value = vm.visualizador }
+    val ultimoVideo = remember { mutableStateOf<VideoAberto?>(null) }
+    if (vm.video != null) SideEffect { ultimoVideo.value = vm.video }
 
     SharedTransitionLayout {
         val st = this
         AnimatedContent(
-            targetState = vm.visualizador != null,
+            targetState = if (vm.visualizador != null) 1 else if (vm.video != null) 2 else 0,
             transitionSpec = { fadeIn(tween(240)) togetherWith fadeOut(tween(240)) },
             label = "visualizador",
-        ) { aberto ->
+        ) { modo ->
             val av = this
             // Guarda a última lista aberta para a tela de saída não ficar vazia durante a animação.
             val dados = vm.visualizador ?: ultimo.value
-            if (aberto && dados != null) {
+            val dadosVideo = vm.video ?: ultimoVideo.value
+            if (modo == 1 && dados != null) {
                 Visualizador(vm, dados, st, av)
+            } else if (modo == 2 && dadosVideo != null) {
+                Reprodutor(vm, dadosVideo, st, av)
             } else {
     Scaffold(
         topBar = {
