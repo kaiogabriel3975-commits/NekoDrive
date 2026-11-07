@@ -76,7 +76,9 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -84,6 +86,8 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.nekodrive.app.data.drive.DriveFile
+import com.nekodrive.app.ui.FaixaVidro
+import com.nekodrive.app.ui.fonteVidro
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -92,15 +96,16 @@ fun DriveScreen(
     onEntrar: () -> Unit,
     st: SharedTransitionScope,
     avExterno: AnimatedVisibilityScope,
-    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues,
 ) {
     var confirmar by remember { mutableStateOf(false) }
+    var alturaTopo by remember { mutableStateOf(0.dp) }
 
     BackHandler(enabled = vm.buscando || vm.pilha.size > 1) { vm.voltar() }
     BackHandler(enabled = vm.selecionados.isNotEmpty()) { vm.limparSelecao() }
 
     if (vm.contaAtual == null) {
-        SemConta(vm.erro, onEntrar, modifier)
+        SemConta(vm.erro, onEntrar, Modifier.padding(contentPadding))
         return
     }
 
@@ -112,17 +117,10 @@ fun DriveScreen(
     }
     val chave = if (vm.buscando) "busca" else vm.pilha.last().id
 
-    Column(modifier.fillMaxSize()) {
-        Barra(vm) { confirmar = true }
-        vm.erro?.let { msg ->
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(msg, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
-                TextButton(onClick = { vm.recarregar() }) { Text("Tentar de novo") }
-            }
-        }
+    Box(Modifier.fillMaxSize()) {
         AnimatedContent(
             targetState = chave,
-            modifier = Modifier.weight(1f).fillMaxWidth(),
+            modifier = Modifier.fillMaxSize(),
             transitionSpec = { fadeIn(tween(240)) togetherWith fadeOut(tween(240)) },
             label = "pasta",
         ) { chavePagina ->
@@ -133,8 +131,25 @@ fun DriveScreen(
                 st = st,
                 av = this@AnimatedContent,
                 avExterno = avExterno,
+                espaco = PaddingValues(
+                    top = contentPadding.calculateTopPadding() + alturaTopo,
+                    bottom = contentPadding.calculateBottomPadding(),
+                ),
                 aoTocar = aoTocar,
             )
+        }
+        FaixaVidro(
+            topo = contentPadding.calculateTopPadding(),
+            aoMedir = { alturaTopo = it },
+            modifier = Modifier.align(Alignment.TopCenter),
+        ) {
+            Barra(vm) { confirmar = true }
+            vm.erro?.let { msg ->
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(msg, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { vm.recarregar() }) { Text("Tentar de novo") }
+                }
+            }
         }
     }
 
@@ -230,6 +245,7 @@ private fun PaginaPasta(
     st: SharedTransitionScope,
     av: AnimatedVisibilityScope,
     avExterno: AnimatedVisibilityScope,
+    espaco: PaddingValues,
     aoTocar: (DriveFile) -> Unit,
 ) {
     // A página que está saindo mostra a última lista que ela exibiu, e não a da pasta nova.
@@ -237,13 +253,17 @@ private fun PaginaPasta(
     if (atual) SideEffect { ultima.value = vm.itens }
     val lista = if (atual) vm.itens else ultima.value
 
-    Surface(Modifier.pastaBounds("pasta-$chave", st, av).fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+    Surface(Modifier.pastaBounds("pasta-$chave", st, av).fonteVidro().fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Box(Modifier.fillMaxSize()) {
             if (vm.grade) {
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(110.dp),
                     state = vm.estadoGrade(chave),
-                    contentPadding = PaddingValues(12.dp),
+                    contentPadding = PaddingValues(
+                        start = 12.dp, end = 12.dp,
+                        top = espaco.calculateTopPadding() + 12.dp,
+                        bottom = espaco.calculateBottomPadding() + 12.dp,
+                    ),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxSize(),
@@ -256,7 +276,11 @@ private fun PaginaPasta(
                     }
                 }
             } else {
-                LazyColumn(Modifier.fillMaxSize(), state = vm.estadoLista(chave)) {
+                LazyColumn(
+                    Modifier.fillMaxSize(),
+                    state = vm.estadoLista(chave),
+                    contentPadding = PaddingValues(top = espaco.calculateTopPadding(), bottom = espaco.calculateBottomPadding()),
+                ) {
                     items(lista, key = { it.id }) { f ->
                         ItemLinha(f, vm.token, f.id in vm.selecionados, vm.estadoDe(f), st, av, avExterno, { aoTocar(f) }, { vm.alternarSelecao(f) })
                     }
@@ -358,6 +382,7 @@ internal fun ItemGrade(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
+    val haptico = LocalHapticFeedback.current
     val borda = if (selecionado) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null
     val base = when {
         f.isFolder -> Modifier.pastaBounds("pasta-${f.id}", st, av)
@@ -365,7 +390,10 @@ internal fun ItemGrade(
         f.isVideo -> Modifier.pastaBounds("video-${f.id}", st, avExterno)
         else -> Modifier
     }
-    Card(modifier = base.combinedClickable(onClick = onClick, onLongClick = onLongClick), border = borda) {
+    Card(modifier = base.combinedClickable(
+                onClick = onClick,
+                onLongClick = { haptico.performHapticFeedback(HapticFeedbackType.LongPress); onLongClick() },
+            ), border = borda) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
             Miniatura(f, token, estado, 44.dp, Modifier.fillMaxSize())
             if (selecionado) {
@@ -405,11 +433,15 @@ internal fun ItemLinha(
         f.isVideo -> Modifier.pastaBounds("video-${f.id}", st, avExterno)
         else -> Modifier
     }
+    val haptico = LocalHapticFeedback.current
     val fundo = if (selecionado) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
     Row(
         base.fillMaxWidth()
             .background(fundo)
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = { haptico.performHapticFeedback(HapticFeedbackType.LongPress); onLongClick() },
+            )
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
