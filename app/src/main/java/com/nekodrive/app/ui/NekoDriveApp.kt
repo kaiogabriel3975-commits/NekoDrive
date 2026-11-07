@@ -39,6 +39,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,7 +48,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeTint
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -85,7 +90,15 @@ fun NekoDriveApp() {
     var mostrarContas by rememberSaveable { mutableStateOf(false) }
     var mostrarConfig by rememberSaveable { mutableStateOf(false) }
     // Etapa 1-2: barras translúcidas. O blur real (Haze) entra na etapa de polimento.
-    val vidro = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
+    val corVidro = MaterialTheme.colorScheme.surface
+    val vidroEstado = remember { HazeState() }
+    val vidroEstilo = HazeStyle(
+        backgroundColor = corVidro,
+        tint = HazeTint(corVidro.copy(alpha = 0.55f)),
+        blurRadius = 24.dp,
+        noiseFactor = 0f,
+    )
+    val vidroCtx = remember(vidroEstado, vidroEstilo) { Vidro(vidroEstado, vidroEstilo) }
 
     // 1) tela de consentimento do Google (quando necessária)
     val consentimento = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
@@ -126,6 +139,7 @@ fun NekoDriveApp() {
     val ultimoVideo = remember { mutableStateOf<VideoAberto?>(null) }
     if (vm.video != null) SideEffect { ultimoVideo.value = vm.video }
 
+    CompositionLocalProvider(LocalVidro provides vidroCtx) {
     SharedTransitionLayout {
         val st = this
         AnimatedContent(
@@ -160,11 +174,15 @@ fun NekoDriveApp() {
                         Icon(Icons.Outlined.Settings, contentDescription = "Configurações")
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = vidro),
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent,
+                ),
+                modifier = Modifier.vidro(),
             )
         },
         bottomBar = {
-            NavigationBar(containerColor = vidro) {
+            NavigationBar(containerColor = Color.Transparent, modifier = Modifier.vidro()) {
                 Destino.entries.forEach { d ->
                     NavigationBarItem(
                         selected = atual == d,
@@ -176,15 +194,17 @@ fun NekoDriveApp() {
             }
         },
     ) { padding ->
+        // O conteúdo ocupa a tela toda: as listas rolam por baixo das barras de vidro
         when (atual) {
-            Destino.Drive -> DriveScreen(vm, onEntrar = entrar, st = st, avExterno = av, modifier = Modifier.padding(padding))
-            Destino.Favoritos -> FavoritosScreen(vm, st, av, Modifier.padding(padding))
-            Destino.Lixeira -> LixeiraScreen(vm, st, av, Modifier.padding(padding))
+            Destino.Drive -> DriveScreen(vm, onEntrar = entrar, st = st, avExterno = av, contentPadding = padding)
+            Destino.Favoritos -> FavoritosScreen(vm, st, av, padding)
+            Destino.Lixeira -> LixeiraScreen(vm, st, av, padding)
         }
     }
 
             }
         }
+    }
     }
 
     if (mostrarContas) {
