@@ -5,8 +5,8 @@ import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -28,49 +28,44 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.nekodrive.app.ui.FaixaVidro
 import com.nekodrive.app.ui.drive.DriveViewModel
 import com.nekodrive.app.ui.drive.ItemLinha
+import com.nekodrive.app.ui.fonteVidro
 
 private const val CHAVE = "lixeira"
 
 // Diálogos: 0 nenhum, 1 excluir selecionados, 2 esvaziar (primeira confirmação), 3 esvaziar (segunda confirmação)
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-fun LixeiraScreen(vm: DriveViewModel, st: SharedTransitionScope, av: AnimatedVisibilityScope, modifier: Modifier = Modifier) {
+fun LixeiraScreen(
+    vm: DriveViewModel,
+    st: SharedTransitionScope,
+    av: AnimatedVisibilityScope,
+    contentPadding: PaddingValues,
+) {
     var dialogo by remember { mutableIntStateOf(0) }
+    var alturaTopo by remember { mutableStateOf(0.dp) }
     BackHandler(enabled = vm.selecionados.isNotEmpty()) { vm.limparSelecao() }
     LaunchedEffect(vm.contaAtual?.email) { vm.carregarLixeira() }
 
-    Column(modifier.fillMaxSize()) {
-        if (vm.selecionados.isNotEmpty()) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { vm.limparSelecao() }) { Icon(Icons.Outlined.Close, "Cancelar seleção") }
-                Text("${vm.selecionados.size} selecionado(s)", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-                IconButton(onClick = { vm.restaurarSelecionados() }) { Icon(Icons.Outlined.RestoreFromTrash, "Restaurar") }
-                IconButton(onClick = { dialogo = 1 }) { Icon(Icons.Outlined.DeleteForever, "Excluir definitivamente") }
-            }
-        } else {
-            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Lixeira", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-                TextButton(onClick = { dialogo = 2 }, enabled = vm.lixeira.isNotEmpty()) { Text("Esvaziar") }
-            }
-        }
+    val topo = contentPadding.calculateTopPadding()
+    val base = contentPadding.calculateBottomPadding()
 
-        vm.erroLixeira?.let { msg ->
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(msg, Modifier.weight(1f), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = { vm.carregarLixeira() }) { Text("Tentar de novo") }
-            }
-        }
-
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            LazyColumn(Modifier.fillMaxSize(), state = vm.estadoLista(CHAVE)) {
+    Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().fonteVidro()) {
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                state = vm.estadoLista(CHAVE),
+                contentPadding = PaddingValues(top = topo + alturaTopo, bottom = base),
+            ) {
                 items(vm.lixeira, key = { it.id }) { f ->
                     // Na lixeira o toque também seleciona: não dá para abrir itens apagados
                     ItemLinha(
@@ -96,6 +91,28 @@ fun LixeiraScreen(vm: DriveViewModel, st: SharedTransitionScope, av: AnimatedVis
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+
+        FaixaVidro(topo = topo, aoMedir = { alturaTopo = it }, modifier = Modifier.align(Alignment.TopCenter)) {
+            if (vm.selecionados.isNotEmpty()) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { vm.limparSelecao() }) { Icon(Icons.Outlined.Close, "Cancelar seleção") }
+                    Text("${vm.selecionados.size} selecionado(s)", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                    IconButton(onClick = { vm.restaurarSelecionados() }) { Icon(Icons.Outlined.RestoreFromTrash, "Restaurar") }
+                    IconButton(onClick = { dialogo = 1 }) { Icon(Icons.Outlined.DeleteForever, "Excluir definitivamente") }
+                }
+            } else {
+                Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Lixeira", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                    TextButton(onClick = { dialogo = 2 }, enabled = vm.lixeira.isNotEmpty()) { Text("Esvaziar") }
+                }
+            }
+            vm.erroLixeira?.let { msg ->
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(msg, Modifier.weight(1f), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = { vm.carregarLixeira() }) { Text("Tentar de novo") }
+                }
             }
         }
     }
