@@ -81,9 +81,8 @@ class CastControle(private val ctx: Context, private val servidor: ServidorLocal
     /** Abre a lista de dispositivos Cast da rede. */
     fun escolherDispositivo(activity: FragmentActivity) {
         val c = contexto ?: return
-        val seletor = c.mergedSelector ?: return
         val dialogo = MediaRouteChooserDialogFragment()
-        dialogo.routeSelector = seletor
+        dialogo.routeSelector = c.mergedSelector ?: return
         dialogo.show(activity.supportFragmentManager, "cast")
     }
 
