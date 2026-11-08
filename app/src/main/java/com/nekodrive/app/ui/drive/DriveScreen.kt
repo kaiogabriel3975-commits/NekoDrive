@@ -254,7 +254,6 @@ private fun Barra(vm: DriveViewModel, aoExcluir: () -> Unit) {
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-@OptIn(ExperimentalSharedTransitionApi::class)
 internal fun Modifier.pastaBounds(chave: String, st: SharedTransitionScope, av: AnimatedVisibilityScope): Modifier =
     with(st) {
         this@pastaBounds.sharedBounds(
