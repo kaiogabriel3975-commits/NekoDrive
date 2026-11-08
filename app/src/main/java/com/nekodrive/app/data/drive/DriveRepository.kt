@@ -85,23 +85,30 @@ class DriveRepository(private val auth: AuthManager) {
         }
     }
 
-    /** Todos os campos que a API devolve para o arquivo (`fields=*`), em lista chave/valor. */
-    suspend fun detalhes(email: String, id: String): List<Pair<String, String>> =
-        comToken(email) { token ->
-            val url = (api + "files/" + id).toHttpUrl().newBuilder().addQueryParameter("fields", "*").build()
-            val saida = mutableListOf<Pair<String, String>>()
-            achatar("", JSONObject(get(token, url)), saida)
-            saida.sortedBy { it.first }
-        }
+    /** Metadados de um arquivo para o menu de informações (somente campos que a API confirma). */
+    suspend fun metadados(email: String, id: String): JSONObject = comToken(email) { token ->
+        val campos = "id,name,mimeType,size,createdTime,modifiedTime,fileExtension,webViewLink," +
+            "owners(emailAddress,displayName),parents,imageMediaMetadata,videoMediaMetadata"
+        val url = (api + "files/" + id).toHttpUrl().newBuilder().addQueryParameter("fields", campos).build()
+        JSONObject(get(token, url))
+    }
 
-    private fun achatar(prefixo: String, valor: Any?, saida: MutableList<Pair<String, String>>) {
-        when (valor) {
-            is JSONObject -> valor.keys().forEach { k ->
-                achatar(if (prefixo.isEmpty()) k else "$prefixo.$k", valor.get(k), saida)
+    /** Caminho legível ("Meu Drive / Fotos / 2024"); vazio se o Drive não permitir confirmar. */
+    suspend fun caminho(email: String, idPai: String?): String = comToken(email) { token ->
+        val nomes = mutableListOf<String>()
+        var atual = idPai
+        while (atual != null && nomes.size < 25) {
+            val url = (api + "files/" + atual).toHttpUrl().newBuilder()
+                .addQueryParameter("fields", "name,parents").build()
+            val pasta = try {
+                JSONObject(get(token, url))
+            } catch (e: DriveHttpException) {
+                break
             }
-            is JSONArray -> for (i in 0 until valor.length()) achatar("$prefixo[$i]", valor.get(i), saida)
-            else -> saida += prefixo to valor.toString()
+            nomes.add(0, pasta.optString("name"))
+            atual = pasta.optJSONArray("parents")?.optString(0)?.takeIf { it.isNotEmpty() }
         }
+        nomes.joinToString(" / ")
     }
 
     /** Baixa o conteúdo original do arquivo para [destino]. */
