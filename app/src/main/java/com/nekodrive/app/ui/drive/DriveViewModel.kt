@@ -32,11 +32,8 @@ data class Pasta(val id: String, val nome: String)
 /** Situação de um arquivo na lista: salvo no cache, assistido, ou baixando (progresso de 0 a 1). */
 data class EstadoArquivo(val noCache: Boolean, val assistido: Boolean, val progresso: Float?, val favorito: Boolean = false)
 
-/** Fotos abertas no visualizador (somente as imagens da lista atual) e a foto em exibição. */
+/** Galeria aberta: fotos e vídeos da lista atual, na ordem da pasta, e o item em exibição. */
 data class FotosAbertas(val fotos: List<DriveFile>, val indice: Int)
-
-/** Vídeo aberto no player e as legendas (.srt/.vtt) de mesmo nome encontradas na mesma lista. */
-data class VideoAberto(val arquivo: DriveFile, val legendas: List<DriveFile>)
 
 enum class CampoOrdem(val rotulo: String, val chaveApi: String) {
     Nome("Nome", "name_natural"),
@@ -65,7 +62,6 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     var selecionados by mutableStateOf(setOf<String>()); private set
 
     var visualizador by mutableStateOf<FotosAbertas?>(null); private set
-    var video by mutableStateOf<VideoAberto?>(null); private set
 
     /** Muda quando o cache ou o progresso mudam, para as listas se atualizarem. */
     var versaoCache by mutableIntStateOf(0); private set
@@ -195,6 +191,22 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
         carregarPastaAtual(usarCache = false)
     }
 
+    /** Toque no botão Drive: volta para a raiz (e para o topo da lista). */
+    fun irParaInicio() {
+        if (buscando) { job?.cancel(); buscando = false; termo = "" }
+        if (pilha.size > 1) {
+            pilha = listOf(raiz)
+            carregarPastaAtual(usarCache = true)
+        } else if (itens.isEmpty()) {
+            carregarPastaAtual(usarCache = true)
+        }
+        selecionados = emptySet()
+        viewModelScope.launch {
+            val chave = chaveRolagemDrive()
+            if (grade) estadoGrade(chave).animateScrollToItem(0) else estadoLista(chave).animateScrollToItem(0)
+        }
+    }
+
     fun voltar(): Boolean {
         if (buscando) { sairDaBusca(); return true }
         if (pilha.size <= 1) return false
@@ -275,10 +287,7 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
             for (id in ids) {
                 try {
                     c.drive.trash(conta.email, id)
-                    itens = itens.filterNot { it.id == id }
-                    favoritosItens = favoritosItens.filterNot { it.id == id }
-                    favoritosIds = favoritosIds - id
-                    contaAtual?.let { c.favoritos.salvar(it.email, favoritosItens) }
+                    tirarDasListas(id)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -290,16 +299,52 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    // ---------- visualizador de fotos ----------
+    private fun tirarDasListas(id: String) {
+        itens = itens.filterNot { it.id == id }
+        favoritosItens = favoritosItens.filterNot { it.id == id }
+        favoritosIds = favoritosIds - id
+        contaAtual?.let { c.favoritos.salvar(it.email, favoritosItens) }
+    }
+
+    /** Move para a lixeira o arquivo aberto na galeria e segue para o próximo (fecha se era o último). */
+    fun excluirDaGaleria(f: DriveFile) {
+        val conta = contaAtual ?: return
+        viewModelScope.launch {
+            try {
+                c.drive.trash(conta.email, f.id)
+                tirarDasListas(f.id)
+                val v = visualizador
+                if (v != null) {
+                    val restantes = v.fotos.filterNot { it.id == f.id }
+                    visualizador = if (restantes.isEmpty()) null
+                    else v.copy(fotos = restantes, indice = v.indice.coerceAtMost(restantes.lastIndex))
+                }
+                versaoCache++
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                erro = "Não foi possível mover para a lixeira: ${e.message}"
+            }
+        }
+    }
+
+    // ---------- galeria (fotos e vídeos na mesma sequência) ----------
 
     private fun chaveRolagemDrive() = if (buscando) "busca" else pilha.last().id
 
-    fun abrirFoto(f: DriveFile, lista: List<DriveFile> = itens, chave: String = chaveRolagemDrive()) {
-        val fotos = lista.filter { it.isImage }
-        val i = fotos.indexOfFirst { it.id == f.id }
+    fun abrirFoto(f: DriveFile, lista: List<DriveFile> = itens, chave: String = chaveRolagemDrive()) =
+        abrirGaleria(f, lista, chave)
+
+    fun abrirVideo(f: DriveFile, lista: List<DriveFile> = itens, chave: String = chaveRolagemDrive()) =
+        abrirGaleria(f, lista, chave)
+
+    /** Fotos e vídeos da lista entram na mesma sequência, na ordem em que aparecem na pasta. */
+    private fun abrirGaleria(f: DriveFile, lista: List<DriveFile>, chave: String) {
+        val midias = lista.filter { it.isImage || it.isVideo }
+        val i = midias.indexOfFirst { it.id == f.id }
         if (i >= 0) {
             rolagem = chave to lista
-            visualizador = FotosAbertas(fotos, i)
+            visualizador = FotosAbertas(midias, i)
         }
     }
 
@@ -307,13 +352,14 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
         visualizador = visualizador?.takeIf { i in it.fotos.indices }?.copy(indice = i) ?: visualizador
     }
 
-    /** Fecha o visualizador depois de rolar a lista até a foto atual, para a animação voltar ao lugar certo. */
+    /** Fecha a galeria depois de rolar a lista até o item atual, para a animação voltar ao lugar certo. */
     fun fecharFoto() {
         val v = visualizador ?: return
         val atual = v.fotos.getOrNull(v.indice)
         viewModelScope.launch {
             if (atual != null) garantirVisivel(atual.id)
             visualizador = null
+            versaoCache++
         }
     }
 
@@ -330,25 +376,14 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    // ---------- player de vídeo ----------
-
-    fun abrirVideo(f: DriveFile, lista: List<DriveFile> = itens, chave: String = chaveRolagemDrive()) {
-        rolagem = chave to lista
+    /** Legendas laterais (.srt/.vtt com o mesmo nome) de um vídeo, procuradas na lista de onde ele foi aberto. */
+    fun legendasDe(f: DriveFile): List<DriveFile> {
+        val lista = rolagem?.second ?: itens
         val base = f.name.substringBeforeLast('.', f.name)
-        val legendas = lista.filter { l ->
+        return lista.filter { l ->
             !l.isFolder && l.id != f.id &&
                 (l.name.endsWith(".srt", true) || l.name.endsWith(".vtt", true)) &&
                 l.name.startsWith(base, ignoreCase = true)
-        }
-        video = VideoAberto(f, legendas)
-    }
-
-    fun fecharVideo() {
-        val v = video ?: return
-        viewModelScope.launch {
-            garantirVisivel(v.arquivo.id)
-            video = null
-            versaoCache++
         }
     }
 
@@ -367,18 +402,27 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    fun abrirDetalhes(f: DriveFile) {
+    fun abrirDetalhes(f: DriveFile, extras: List<Pair<String, String>> = emptyList()) {
         val conta = contaAtual ?: return
         tituloDetalhes = f.name
         detalhes = emptyList()
         carregandoDetalhes = true
         viewModelScope.launch {
             try {
-                detalhes = c.drive.detalhes(conta.email, f.id)
+                val meta = c.drive.metadados(conta.email, f.id)
+                val pai = meta.optJSONArray("parents")?.optString(0)?.takeIf { it.isNotEmpty() }
+                val caminho = try {
+                    c.drive.caminho(conta.email, pai)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    ""
+                }
+                detalhes = montarInformacoes(meta, caminho) + extras
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                detalhes = listOf("Erro" to (e.message ?: "Falha ao carregar os detalhes"))
+                detalhes = listOf("Erro" to (e.message ?: "Falha ao carregar as informações"))
             } finally {
                 carregandoDetalhes = false
             }
@@ -388,9 +432,9 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     fun fecharDetalhes() { detalhes = null }
 
     /** Baixa o arquivo para a pasta de cópias do cache (usada pelo botão copiar) e devolve o arquivo. */
-    suspend fun copiarParaCache(f: DriveFile): File {
+    suspend fun copiarParaCache(f: DriveFile, pasta: String = "copiar"): File {
         val conta = contaAtual ?: error("Nenhuma conta selecionada")
-        val dir = File(c.cacheDir, "copiar")
+        val dir = File(c.cacheDir, pasta)
         withContext(Dispatchers.IO) { dir.listFiles()?.forEach { it.delete() } }
         val nome = f.id + "_" + f.name.replace(Regex("[^A-Za-z0-9._-]"), "_")
         val arquivo = File(dir, nome)

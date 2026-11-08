@@ -3,7 +3,9 @@ package com.nekodrive.app.ui.drive
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.BoundsTransform
 import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -32,22 +34,22 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Sort
-import androidx.compose.material.icons.automirrored.outlined.ViewList
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.DownloadDone
-import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.GridView
-import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material.icons.outlined.Movie
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.StarBorder
-import androidx.compose.material.icons.outlined.TaskAlt
+import androidx.compose.material.icons.automirrored.rounded.Sort
+import androidx.compose.material.icons.automirrored.rounded.ViewList
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.DownloadDone
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.StarBorder
+import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -68,6 +70,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -87,7 +90,10 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.nekodrive.app.data.drive.DriveFile
 import com.nekodrive.app.ui.FaixaVidro
+import com.nekodrive.app.ui.NomeUmaLinha
+import com.nekodrive.app.ui.abrirComOutroApp
 import com.nekodrive.app.ui.fonteVidro
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -100,6 +106,9 @@ fun DriveScreen(
 ) {
     var confirmar by remember { mutableStateOf(false) }
     var alturaTopo by remember { mutableStateOf(0.dp) }
+    var arquivoExterno by remember { mutableStateOf<DriveFile?>(null) }
+    val ctxDrive = LocalContext.current
+    val escopoDrive = rememberCoroutineScope()
 
     BackHandler(enabled = vm.buscando || vm.pilha.size > 1) { vm.voltar() }
     BackHandler(enabled = vm.selecionados.isNotEmpty()) { vm.limparSelecao() }
@@ -112,8 +121,8 @@ fun DriveScreen(
     val aoTocar: (DriveFile) -> Unit = { f ->
         if (vm.selecionados.isNotEmpty()) vm.alternarSelecao(f)
         else if (f.isFolder) vm.abrirPasta(f)
-        else if (f.isImage) vm.abrirFoto(f)
-        else if (f.isVideo) vm.abrirVideo(f)
+        else if (f.isImage || f.isVideo) vm.abrirFoto(f)
+        else arquivoExterno = f
     }
     val chave = if (vm.buscando) "busca" else vm.pilha.last().id
 
@@ -153,6 +162,21 @@ fun DriveScreen(
         }
     }
 
+    arquivoExterno?.let { f ->
+        AlertDialog(
+            onDismissRequest = { arquivoExterno = null },
+            title = { Text("Abrir com outro app?") },
+            text = { Text("O nekodrive não abre este tipo de arquivo. Dá para baixá-lo e abri-lo com outro app instalado no celular.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    arquivoExterno = null
+                    escopoDrive.launch { abrirComOutroApp(ctxDrive, vm, f) }
+                }) { Text("Abrir com…") }
+            },
+            dismissButton = { TextButton(onClick = { arquivoExterno = null }) { Text("Cancelar") } },
+        )
+    }
+
     if (confirmar) {
         val n = vm.selecionados.size
         AlertDialog(
@@ -171,17 +195,17 @@ fun DriveScreen(
 private fun Barra(vm: DriveViewModel, aoExcluir: () -> Unit) {
     if (vm.selecionados.isNotEmpty()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { vm.limparSelecao() }) { Icon(Icons.Outlined.Close, "Cancelar seleção") }
+            IconButton(onClick = { vm.limparSelecao() }) { Icon(Icons.Rounded.Close, "Cancelar seleção") }
             Text("${vm.selecionados.size} selecionado(s)", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-            IconButton(onClick = { vm.favoritarSelecao(vm.itens) }) { Icon(Icons.Outlined.StarBorder, "Favoritar") }
-            IconButton(onClick = { vm.baixarSelecionados() }) { Icon(Icons.Outlined.Download, "Baixar") }
-            IconButton(onClick = aoExcluir) { Icon(Icons.Outlined.Delete, "Mover para a lixeira") }
+            IconButton(onClick = { vm.favoritarSelecao(vm.itens) }) { Icon(Icons.Rounded.StarBorder, "Favoritar") }
+            IconButton(onClick = { vm.baixarSelecionados() }) { Icon(Icons.Rounded.Download, "Baixar") }
+            IconButton(onClick = aoExcluir) { Icon(Icons.Rounded.Delete, "Mover para a lixeira") }
         }
     } else if (vm.buscando) {
         val foco = remember { FocusRequester() }
         LaunchedEffect(Unit) { foco.requestFocus() }
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { vm.sairDaBusca() }) { Icon(Icons.Outlined.Close, "Fechar busca") }
+            IconButton(onClick = { vm.sairDaBusca() }) { Icon(Icons.Rounded.Close, "Fechar busca") }
             TextField(
                 value = vm.termo,
                 onValueChange = { vm.definirTermo(it) },
@@ -198,17 +222,14 @@ private fun Barra(vm: DriveViewModel, aoExcluir: () -> Unit) {
         }
     } else {
         var menuOrdem by remember { mutableStateOf(false) }
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                vm.pilha.joinToString("  ›  ") { it.nome },
-                Modifier.weight(1f),
-                style = MaterialTheme.typography.labelLarge,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            IconButton(onClick = { vm.iniciarBusca() }) { Icon(Icons.Outlined.Search, "Buscar") }
+        Row(
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = { vm.iniciarBusca() }) { Icon(Icons.Rounded.Search, "Buscar") }
             Box {
-                IconButton(onClick = { menuOrdem = true }) { Icon(Icons.AutoMirrored.Outlined.Sort, "Ordenar") }
+                IconButton(onClick = { menuOrdem = true }) { Icon(Icons.AutoMirrored.Rounded.Sort, "Ordenar") }
                 DropdownMenu(expanded = menuOrdem, onDismissRequest = { menuOrdem = false }) {
                     CampoOrdem.entries.forEach { campo ->
                         val seta = if (campo == vm.campo) (if (vm.crescente) "  ↑" else "  ↓") else ""
@@ -221,7 +242,7 @@ private fun Barra(vm: DriveViewModel, aoExcluir: () -> Unit) {
             }
             IconButton(onClick = { vm.alternarModo() }) {
                 Icon(
-                    if (vm.grade) Icons.AutoMirrored.Outlined.ViewList else Icons.Outlined.GridView,
+                    if (vm.grade) Icons.AutoMirrored.Rounded.ViewList else Icons.Rounded.GridView,
                     "Alternar entre grade e lista",
                 )
             }
@@ -233,8 +254,21 @@ private fun Barra(vm: DriveViewModel, aoExcluir: () -> Unit) {
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
+@OptIn(ExperimentalSharedTransitionApi::class)
 internal fun Modifier.pastaBounds(chave: String, st: SharedTransitionScope, av: AnimatedVisibilityScope): Modifier =
-    with(st) { this@pastaBounds.sharedBounds(rememberSharedContentState(key = chave), animatedVisibilityScope = av) }
+    with(st) {
+        this@pastaBounds.sharedBounds(
+            rememberSharedContentState(key = chave),
+            animatedVisibilityScope = av,
+            boundsTransform = CurvaSuave,
+        )
+    }
+
+/** Mesma duração de antes (cerca de 500 ms) com uma curva de desaceleração suave, no estilo das animações do iOS. */
+@OptIn(ExperimentalSharedTransitionApi::class)
+private val CurvaSuave = BoundsTransform { _, _ ->
+    tween(durationMillis = 500, easing = CubicBezierEasing(0.32f, 0.72f, 0f, 1f))
+}
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -328,10 +362,10 @@ private fun Miniatura(f: DriveFile, token: String?, estado: EstadoArquivo, taman
             AsyncImage(request, f.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         } else {
             val icone = when {
-                f.isFolder -> Icons.Outlined.Folder
-                f.isVideo -> Icons.Outlined.Movie
-                f.isImage -> Icons.Outlined.Image
-                else -> Icons.Outlined.Description
+                f.isFolder -> Icons.Rounded.Folder
+                f.isVideo -> Icons.Rounded.Movie
+                f.isImage -> Icons.Rounded.Image
+                else -> Icons.Rounded.Description
             }
             Icon(
                 icone, contentDescription = null, modifier = Modifier.size(tamanhoIcone),
@@ -347,21 +381,21 @@ private fun Miniatura(f: DriveFile, token: String?, estado: EstadoArquivo, taman
             )
         } else if (estado.noCache) {
             Icon(
-                Icons.Outlined.DownloadDone, "Salvo no cache", tint = Color.White,
+                Icons.Rounded.DownloadDone, "Salvo no cache", tint = Color.White,
                 modifier = Modifier.align(Alignment.BottomStart).padding(4.dp)
                     .background(Color.Black.copy(alpha = 0.55f), CircleShape).padding(3.dp).size(14.dp),
             )
         }
         if (estado.favorito) {
             Icon(
-                Icons.Filled.Star, "Favorito", tint = Color(0xFFFFC107),
+                Icons.Rounded.Star, "Favorito", tint = Color(0xFFFFC107),
                 modifier = Modifier.align(Alignment.TopStart).padding(4.dp)
                     .background(Color.Black.copy(alpha = 0.55f), CircleShape).padding(3.dp).size(14.dp),
             )
         }
         if (estado.assistido) {
             Icon(
-                Icons.Outlined.TaskAlt, "Assistido", tint = Color.White,
+                Icons.Rounded.TaskAlt, "Assistido", tint = Color.White,
                 modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp)
                     .background(Color.Black.copy(alpha = 0.55f), CircleShape).padding(3.dp).size(14.dp),
             )
@@ -384,33 +418,30 @@ internal fun ItemGrade(
 ) {
     val haptico = LocalHapticFeedback.current
     val borda = if (selecionado) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null
-    val base = when {
+    val origem = when {
         f.isFolder -> Modifier.pastaBounds("pasta-${f.id}", st, av)
         f.isImage -> Modifier.pastaBounds("foto-${f.id}", st, avExterno)
         f.isVideo -> Modifier.pastaBounds("video-${f.id}", st, avExterno)
         else -> Modifier
     }
-    Card(modifier = base.combinedClickable(
-                onClick = onClick,
-                onLongClick = { haptico.performHapticFeedback(HapticFeedbackType.LongPress); onLongClick() },
-            ), border = borda) {
-        Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
+    Card(
+        modifier = Modifier.combinedClickable(
+            onClick = onClick,
+            onLongClick = { haptico.performHapticFeedback(HapticFeedbackType.LongPress); onLongClick() },
+        ),
+        border = borda,
+    ) {
+        Box(Modifier.fillMaxWidth().aspectRatio(1f).then(origem)) {
             Miniatura(f, token, estado, 44.dp, Modifier.fillMaxSize())
             if (selecionado) {
                 Icon(
-                    Icons.Filled.CheckCircle, contentDescription = "Selecionado",
+                    Icons.Rounded.CheckCircle, contentDescription = "Selecionado",
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(24.dp),
                 )
             }
         }
-        Text(
-            f.name,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(8.dp),
-        )
+        NomeUmaLinha(f.name, Modifier.fillMaxWidth().padding(8.dp), style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -427,7 +458,7 @@ internal fun ItemLinha(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
-    val base = when {
+    val origem = when {
         f.isFolder -> Modifier.pastaBounds("pasta-${f.id}", st, av)
         f.isImage -> Modifier.pastaBounds("foto-${f.id}", st, avExterno)
         f.isVideo -> Modifier.pastaBounds("video-${f.id}", st, avExterno)
@@ -436,7 +467,7 @@ internal fun ItemLinha(
     val haptico = LocalHapticFeedback.current
     val fundo = if (selecionado) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
     Row(
-        base.fillMaxWidth()
+        Modifier.fillMaxWidth()
             .background(fundo)
             .combinedClickable(
                 onClick = onClick,
@@ -445,16 +476,16 @@ internal fun ItemLinha(
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Miniatura(f, token, estado, 28.dp, Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)))
+        Miniatura(f, token, estado, 28.dp, Modifier.size(56.dp).then(origem).clip(RoundedCornerShape(8.dp)))
         Column(Modifier.weight(1f).padding(start = 12.dp)) {
-            Text(f.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+            NomeUmaLinha(f.name, Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyLarge)
             val sub = listOfNotNull(formatarData(f.modifiedTime), formatarTamanho(f.size)).joinToString("  ·  ")
             if (sub.isNotEmpty()) {
                 Text(sub, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         if (selecionado) {
-            Icon(Icons.Filled.CheckCircle, "Selecionado", tint = MaterialTheme.colorScheme.primary)
+            Icon(Icons.Rounded.CheckCircle, "Selecionado", tint = MaterialTheme.colorScheme.primary)
         }
     }
 }

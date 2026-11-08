@@ -6,9 +6,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AccountCircle
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.PersonAdd
+import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.PersonAdd
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -46,12 +46,12 @@ fun ContasSheet(
                         if (conta.photoUrl != null) {
                             AsyncImage(conta.photoUrl, null, Modifier.size(40.dp).clip(CircleShape), contentScale = ContentScale.Crop)
                         } else {
-                            Icon(Icons.Outlined.AccountCircle, null, Modifier.size(40.dp))
+                            Icon(Icons.Rounded.AccountCircle, null, Modifier.size(40.dp))
                         }
                     },
                     trailingContent = {
                         IconButton(onClick = { onRemover(conta) }) {
-                            Icon(Icons.Outlined.Close, contentDescription = "Remover conta")
+                            Icon(Icons.Rounded.Close, contentDescription = "Remover conta")
                         }
                     },
                     colors = transparente,
@@ -60,7 +60,7 @@ fun ContasSheet(
             }
             ListItem(
                 headlineContent = { Text("Adicionar conta") },
-                leadingContent = { Icon(Icons.Outlined.PersonAdd, null) },
+                leadingContent = { Icon(Icons.Rounded.PersonAdd, null) },
                 colors = transparente,
                 modifier = Modifier.clickable { onAdicionar(); onFechar() },
             )
