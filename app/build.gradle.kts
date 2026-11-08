@@ -59,6 +59,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("io.coil-kt:coil-gif:2.7.0")
     implementation("dev.chrisbanes.haze:haze:1.5.4")
     implementation("androidx.media3:media3-exoplayer:1.5.0")
     implementation("com.google.android.gms:play-services-cast-framework:21.5.0")
