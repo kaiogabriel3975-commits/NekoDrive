@@ -10,13 +10,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
+import dev.chrisbanes.haze.HazeProgressive
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 
 /** Estado e estilo do efeito de vidro (desfoque do que passa por baixo das barras). */
-class Vidro(val estado: HazeState, val estilo: HazeStyle)
+class Vidro(val estado: HazeState, val estilo: HazeStyle, val estiloCabecalho: HazeStyle = estilo)
 
 val LocalVidro = staticCompositionLocalOf<Vidro?> { null }
 
@@ -25,6 +26,15 @@ val LocalVidro = staticCompositionLocalOf<Vidro?> { null }
 fun Modifier.vidro(): Modifier {
     val v = LocalVidro.current ?: return this
     return this.hazeEffect(state = v.estado, style = v.estilo)
+}
+
+/** Desfoque em gradiente: intenso no topo e sumindo para baixo (cabeçalho). */
+@Composable
+fun Modifier.vidroGradiente(): Modifier {
+    val v = LocalVidro.current ?: return this
+    return this.hazeEffect(state = v.estado, style = v.estiloCabecalho) {
+        progressive = HazeProgressive.verticalGradient(startIntensity = 1f, endIntensity = 0f)
+    }
 }
 
 /** Marca o conteúdo que rola por baixo do vidro. Não pode conter componentes com [vidro]. */
