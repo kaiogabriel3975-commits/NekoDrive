@@ -119,3 +119,38 @@ O workflow se recusa a rodar se `KEYSTORE_BASE64` já existir, para você não t
 - Formatos que o receptor padrão do Chromecast não toca (por exemplo MKV) tentam a versão convertida do Drive
 - Versão convertida: se o player local não tocar o arquivo (AVI, codecs sem suporte), o app tenta sozinho a versão mp4 que o Drive gera. Usa um endereço NÃO oficial do Drive (get_video_info), que pode mudar ou parar de funcionar; legendas laterais não valem nesse modo
 - Android 17: o app mira o SDK 35, então a permissão de rede local (ACCESS_LOCAL_NETWORK) é concedida implicitamente. Se um dia o targetSdk subir para 37 ou mais, será preciso pedi-la
+
+## Etapa 9: polimento
+
+- Vidro com desfoque de verdade (biblioteca Haze 1.5.4) na barra superior, na faixa de ferramentas de cada aba e na barra inferior: as listas rolam por baixo delas
+- O desfoque usa a cor do tema (Material You) com transparência
+- Vibração leve ao selecionar com toque longo
+- No Android 12 exato (não 12L), o Haze 1.5 deixa o desfoque desligado por padrão e mostra só a cor translúcida; do Android 12L em diante (inclusive o 17) o desfoque funciona
+- Haze 2.x e 1.7 exigem Kotlin e Compose mais novos que os do projeto; atualizar o conjunto todo fica como tarefa futura
+
+## Roteiro de teste final (Android 12 e Android 17)
+
+1. Entrar com duas contas e trocar entre elas
+2. Abrir pastas (animação de expansão), voltar, buscar, ordenar, alternar grade e lista
+3. Foto: abrir, deslizar entre fotos, zoom com pinça, girar, copiar (colar em outro app), detalhes, fechar puxando para baixo
+4. Vídeo: tocar, ±10 s, segurar para acelerar, legendas laterais, Picture-in-Picture, retomar de onde parou
+5. Baixar um vídeo, desligar a internet e abrir de novo; mudar o limite de GB e limpar o cache
+6. Favoritar, ver na aba Favoritos; mover para a lixeira, restaurar, excluir e esvaziar
+7. Chromecast na mesma rede Wi-Fi; formato que o player não toca (versão convertida)
+
+## Atualização de UI (documento de especificação)
+
+- ActionBar nativa removida (tema) e edge-to-edge sem a faixa escura nas barras do sistema
+- Cabeçalho com gradiente de blur (Haze, desfoque progressivo); no paisagem, cartão flutuante ao lado da NavigationRail
+- Toolbar flutuante (pílula com vidro, some ao rolar para baixo) no retrato; NavigationRail no paisagem
+- Botão Drive, quando já está na aba, volta ao início (raiz e topo da lista); breadcrumb removido
+- Animação de pasta parte do card cinza da miniatura, com a mesma duração (500 ms) e curva suave estilo iOS
+- Galeria única: fotos e vídeos da pasta na mesma sequência (deslize horizontal), com dissolução com blur entre tipos
+- Fotos: nome no topo (uma linha, marquee a 24 FPS), pílula inferior com girar, copiar, baixar, favoritar, informações e excluir; sem botão de copiar em GIF
+- GIFs e imagens animadas (Coil com decodificador de imagens animadas)
+- Fechar puxando para baixo: a imagem encolhe em direção ao centro, sem acompanhar o dedo por inteiro, com perspectiva 3D (topo para trás, base como referência)
+- Botões somem com fade + blur (390 ms: 90 ms originais + 300 ms)
+- Vídeo: sem botões de ±10 s; toque duplo ±10 s, segurar 2x, mensagens de 500 ms no topo; pausa à esquerda e giro à direita da barra de progresso em círculos de vidro; menu de três pontos (velocidade, transmitir, legendas, informações); pílula com favoritar, baixar, PiP e excluir; barras do sistema só se escondem depois de carregar e acompanham os controles
+- Menus de informações só mostram o que o Drive confirma (data de criação, envio, nome, local, tamanho, resolução, formato, dispositivo/câmera quando houver EXIF, conta proprietária, link); FPS vem do player
+- Arquivos que o app não abre oferecem abrir com outro app (também no erro do player)
+- Ícones arredondados (Material Icons Rounded)
