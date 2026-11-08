@@ -17,12 +17,12 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ViewList
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.automirrored.rounded.ViewList
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -115,18 +115,18 @@ fun FavoritosScreen(
         FaixaVidro(topo = topo, aoMedir = { alturaTopo = it }, modifier = Modifier.align(Alignment.TopCenter)) {
             if (vm.selecionados.isNotEmpty()) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { vm.limparSelecao() }) { Icon(Icons.Outlined.Close, "Cancelar seleção") }
+                    IconButton(onClick = { vm.limparSelecao() }) { Icon(Icons.Rounded.Close, "Cancelar seleção") }
                     Text("${vm.selecionados.size} selecionado(s)", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-                    IconButton(onClick = { vm.favoritarSelecao(lista) }) { Icon(Icons.Filled.Star, "Remover dos favoritos") }
-                    IconButton(onClick = { vm.baixarSelecionados() }) { Icon(Icons.Outlined.Download, "Baixar") }
-                    IconButton(onClick = { confirmar = true }) { Icon(Icons.Outlined.Delete, "Mover para a lixeira") }
+                    IconButton(onClick = { vm.favoritarSelecao(lista) }) { Icon(Icons.Rounded.Star, "Remover dos favoritos") }
+                    IconButton(onClick = { vm.baixarSelecionados() }) { Icon(Icons.Rounded.Download, "Baixar") }
+                    IconButton(onClick = { confirmar = true }) { Icon(Icons.Rounded.Delete, "Mover para a lixeira") }
                 }
             } else {
                 Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Favoritos", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                     IconButton(onClick = { vm.alternarModo() }) {
                         Icon(
-                            if (vm.grade) Icons.AutoMirrored.Outlined.ViewList else Icons.Outlined.GridView,
+                            if (vm.grade) Icons.AutoMirrored.Rounded.ViewList else Icons.Rounded.GridView,
                             "Alternar entre grade e lista",
                         )
                     }
