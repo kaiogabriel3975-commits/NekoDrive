@@ -14,9 +14,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.DeleteForever
-import androidx.compose.material.icons.outlined.RestoreFromTrash
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DeleteForever
+import androidx.compose.material.icons.rounded.RestoreFromTrash
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -97,10 +97,10 @@ fun LixeiraScreen(
         FaixaVidro(topo = topo, aoMedir = { alturaTopo = it }, modifier = Modifier.align(Alignment.TopCenter)) {
             if (vm.selecionados.isNotEmpty()) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { vm.limparSelecao() }) { Icon(Icons.Outlined.Close, "Cancelar seleção") }
+                    IconButton(onClick = { vm.limparSelecao() }) { Icon(Icons.Rounded.Close, "Cancelar seleção") }
                     Text("${vm.selecionados.size} selecionado(s)", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-                    IconButton(onClick = { vm.restaurarSelecionados() }) { Icon(Icons.Outlined.RestoreFromTrash, "Restaurar") }
-                    IconButton(onClick = { dialogo = 1 }) { Icon(Icons.Outlined.DeleteForever, "Excluir definitivamente") }
+                    IconButton(onClick = { vm.restaurarSelecionados() }) { Icon(Icons.Rounded.RestoreFromTrash, "Restaurar") }
+                    IconButton(onClick = { dialogo = 1 }) { Icon(Icons.Rounded.DeleteForever, "Excluir definitivamente") }
                 }
             } else {
                 Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
