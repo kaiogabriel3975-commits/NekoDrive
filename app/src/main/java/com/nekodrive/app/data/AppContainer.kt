@@ -1,5 +1,6 @@
 package com.nekodrive.app.data
 
+import android.content.ContentResolver
 import android.content.Context
 import java.io.File
 import com.nekodrive.app.data.auth.AccountStore
@@ -18,6 +19,7 @@ class AppContainer(context: Context) {
     val playback = PlaybackStore(context)
     val favoritos = FavoritosStore(context)
     val cacheDir: File = context.cacheDir
+    val resolver: ContentResolver = context.contentResolver
     val auth = AuthManager(context)
     val drive = DriveRepository(auth)
 
