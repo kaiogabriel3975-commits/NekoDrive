@@ -237,7 +237,9 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
         fechando = true
         vm.fecharFoto()
         scope.launch { aparecer.animateTo(0f, tween(450)) }
-        scope.launch { progresso.animateTo(1f, spring(dampingRatio = 1f, stiffness = 110f)) }
+        // A inclinação/escala interna acompanha a mesma curva e duração dos sharedBounds (500 ms).
+        // Assim, o conteúdo não termina o movimento antes/depois do retorno da miniatura.
+        scope.launch { progresso.animateTo(1f, tween(durationMillis = 500, easing = CurvaIOS)) }
     }
 
     // Vidro com blur da galeria: o pager é a fonte; botões e pílulas desfocam o que passa por baixo
@@ -700,7 +702,7 @@ private fun PaginaFoto(
     }
     val origem = if (compartilhar) Modifier.pastaBounds("foto-${f.id}", st, av) else Modifier
 
-    BoxWithConstraints(Modifier.fillMaxSize().then(origem)) {
+    BoxWithConstraints(Modifier.fillMaxSize().then(origem).efeitoFechar(progresso)) {
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
 
@@ -745,8 +747,7 @@ private fun PaginaFoto(
 
         Box(
             Modifier.fillMaxSize()
-                .clip(if (compartilhar) RoundedCornerShape(raio) else RectangleShape)
-                .efeitoFechar(progresso),
+                .clip(if (compartilhar) RoundedCornerShape(raio) else RectangleShape),
         ) {
             Box(
                 Modifier.fillMaxSize()
@@ -851,7 +852,7 @@ private fun PaginaVideo(
     }
     val origem = if (compartilhar) Modifier.pastaBounds("video-${f.id}", st, av) else Modifier
 
-    BoxWithConstraints(Modifier.fillMaxSize().then(origem)) {
+    BoxWithConstraints(Modifier.fillMaxSize().then(origem).efeitoFechar(progresso)) {
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
 
@@ -927,8 +928,7 @@ private fun PaginaVideo(
         }
         Box(
             Modifier.fillMaxSize()
-                .clip(if (compartilhar) RoundedCornerShape(raio) else RectangleShape)
-                .efeitoFechar(progresso),
+                .clip(if (compartilhar) RoundedCornerShape(raio) else RectangleShape),
         ) {
             Box(
                 Modifier.fillMaxSize().then(gestos).graphicsLayer {
