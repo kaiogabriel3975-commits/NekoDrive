@@ -90,9 +90,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.ScaleFactor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
@@ -119,6 +121,27 @@ private val CurvaIOS = CubicBezierEasing(0.32f, 0.72f, 0f, 1f)
 /** Mesma duração de antes (cerca de 500 ms) com curva de desaceleração suave, no estilo das animações do iOS. */
 @OptIn(ExperimentalSharedTransitionApi::class)
 private val CurvaSuave = BoundsTransform { _, _ -> tween(durationMillis = 500, easing = CurvaIOS) }
+
+/** Interpola o fator de escala entre Crop e Fit sem trocar o enquadramento de forma instantânea. */
+private class EscalaMiniaturaAnimada(private val progresso: Float) : ContentScale {
+    override fun computeScaleFactor(srcSize: Size, dstSize: Size): ScaleFactor {
+        val crop = ContentScale.Crop.computeScaleFactor(srcSize, dstSize)
+        val fit = ContentScale.Fit.computeScaleFactor(srcSize, dstSize)
+        return ScaleFactor(
+            scaleX = crop.scaleX + (fit.scaleX - crop.scaleX) * progresso,
+            scaleY = crop.scaleY + (fit.scaleY - crop.scaleY) * progresso,
+        )
+    }
+}
+
+@Composable
+private fun escalaMiniaturaNaTransicao(av: AnimatedVisibilityScope): ContentScale {
+    val progresso by av.transition.animateFloat(
+        transitionSpec = { tween(durationMillis = 500, easing = CurvaIOS) },
+        label = "enquadramentoMiniatura",
+    ) { estado -> if (estado == EnterExitState.Visible) 0f else 1f }
+    return remember(progresso) { EscalaMiniaturaAnimada(progresso) }
+}
 
 /**
  * Elemento compartilhado entre a origem (card/miniatura) e o destino (tela da pasta ou galeria).
@@ -439,6 +462,7 @@ private fun Miniatura(
     modifier: Modifier = Modifier,
     fundo: Color = Color.Transparent,
     aoCor: ((Color) -> Unit)? = null,
+    escalaConteudo: ContentScale = ContentScale.Crop,
 ) {
     val context = LocalContext.current
     val ehGif = f.mimeType == "image/gif"
@@ -453,7 +477,7 @@ private fun Miniatura(
                 .crossfade(true)
                 .build()
             AsyncImage(
-                request, f.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
+                request, f.name, Modifier.fillMaxSize(), contentScale = escalaConteudo,
                 onSuccess = { s ->
                     if (aoCor != null) {
                         (s.result.drawable as? BitmapDrawable)?.bitmap?.let { b -> aoCor(corDominante(b)) }
@@ -550,8 +574,10 @@ internal fun ItemGrade(
             ),
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f).then(origemMiniatura)) {
+            val escalaTransicao = if (f.isImage) escalaMiniaturaNaTransicao(avExterno) else ContentScale.Crop
             Miniatura(
                 f, token, estado, 44.dp, Modifier.fillMaxSize(),
+                escalaConteudo = escalaTransicao,
                 aoCor = if (f.isImage || f.isVideo) {
                     { c ->
                         if (c != Color.Unspecified) {
@@ -611,6 +637,7 @@ internal fun ItemLinha(
             f, token, estado, 28.dp,
             Modifier.size(56.dp).then(origem).clip(RoundedCornerShape(10.dp)),
             fundo = MaterialTheme.colorScheme.surfaceVariant,
+            escalaConteudo = if (f.isImage) escalaMiniaturaNaTransicao(avExterno) else ContentScale.Crop,
         )
         Column(Modifier.weight(1f).padding(start = 12.dp)) {
             NomeUmaLinha(f.name, Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyLarge)
