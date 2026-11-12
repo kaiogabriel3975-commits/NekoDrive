@@ -13,6 +13,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.OutputStream
 import java.io.IOException
 
 data class DriveFile(
@@ -173,6 +174,31 @@ class DriveRepository(private val auth: AuthManager) {
     suspend fun esvaziarLixeira(email: String) {
         comToken(email) { token ->
             executar(Request.Builder().url(api + "files/trash").delete().header("Authorization", "Bearer $token").build())
+        }
+    }
+
+    /** Baixa o conteúdo original para um fluxo de saída (usado para salvar em Downloads), com progresso de 0 a 1. */
+    suspend fun baixarParaStream(email: String, id: String, saida: OutputStream, aoProgresso: (Float) -> Unit) {
+        comToken(email) { token ->
+            val url = (api + "files/" + id).toHttpUrl().newBuilder().addQueryParameter("alt", "media").build()
+            val req = Request.Builder().url(url).header("Authorization", "Bearer $token").build()
+            http.newCall(req).execute().use { resp ->
+                if (resp.code == 401) throw UnauthorizedException()
+                if (!resp.isSuccessful) throw IOException(mensagemDeErro(resp.code, resp.body?.string().orEmpty()))
+                val corpo = resp.body ?: throw IOException("Resposta vazia do Drive")
+                val total = corpo.contentLength()
+                var lidos = 0L
+                val buffer = ByteArray(64 * 1024)
+                corpo.byteStream().use { entrada ->
+                    while (true) {
+                        val n = entrada.read(buffer)
+                        if (n < 0) break
+                        saida.write(buffer, 0, n)
+                        lidos += n
+                        if (total > 0) aoProgresso((lidos.toFloat() / total).coerceIn(0f, 1f))
+                    }
+                }
+            }
         }
     }
 
