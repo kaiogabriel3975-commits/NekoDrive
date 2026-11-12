@@ -1,6 +1,9 @@
 package com.nekodrive.app.ui.galeria
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -35,6 +38,15 @@ private const val API = "https://www.googleapis.com/drive/v3/files/"
 
 class Faixa(val rotulo: String, val grupo: Tracks.Group)
 
+/** Uma resolução disponível para o vídeo: a original ou uma versão convertida pelo Drive. */
+class Qualidade(val rotulo: String, val altura: Int, val url: String?, val original: Boolean)
+
+private fun rotuloAltura(h: Int): String = when {
+    h >= 2000 -> "4K"
+    h >= 1400 -> "2K"
+    else -> "${h}p"
+}
+
 /** Player de um vídeo da galeria: estado observável, gestos, legendas, versão convertida e transmissão. */
 @OptIn(UnstableApi::class)
 class ControleVideo(
@@ -65,6 +77,15 @@ class ControleVideo(
     var mensagem by mutableStateOf<String?>(null); private set
     var idMensagem by mutableIntStateOf(0); private set
 
+    /** Resoluções realmente disponíveis para este vídeo (original e versões convertidas menores). */
+    var qualidades by mutableStateOf(listOf<Qualidade>()); private set
+    var qualidadeAtual by mutableStateOf<Qualidade?>(null); private set
+    /** Verdadeiro enquanto o usuário não escolheu uma resolução: aí o app ajusta sozinho conforme a rede. */
+    var qualidadeAutomatica by mutableStateOf(true); private set
+    private var qualidadesCarregadas = false
+    private var alturaOriginal = 0
+    private var redeWifi = true
+
     private var jaTransmitiu = false
     private var ultimoSalvo = 0L
     private val email: String get() = vm.contaAtual?.email ?: ""
@@ -77,6 +98,11 @@ class ControleVideo(
             if (state == Player.STATE_READY) {
                 pronto = true
                 duracao = player.duration.coerceAtLeast(0L)
+                if (!qualidadesCarregadas && !convertida) {
+                    qualidadesCarregadas = true
+                    alturaOriginal = player.videoSize.height
+                    if (alturaOriginal > 0) escopo.launch { carregarQualidades() }
+                }
             }
             if (state == Player.STATE_ENDED) salvarAgora()
         }
@@ -112,7 +138,29 @@ class ControleVideo(
         }
     }
 
+    private val gerenteRede = ctx.getSystemService(ConnectivityManager::class.java)
+    private val ouvinteRede = object : ConnectivityManager.NetworkCallback() {
+        override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+            val wifi = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+            escopo.launch {
+                if (wifi != redeWifi) {
+                    redeWifi = wifi
+                    aplicarPolitica()
+                }
+            }
+        }
+    }
+
     init {
+        redeWifi = gerenteRede?.getNetworkCapabilities(gerenteRede.activeNetwork)?.let {
+            it.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || it.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+        } ?: true
+        try {
+            gerenteRede?.registerDefaultNetworkCallback(ouvinteRede)
+        } catch (e: Exception) {
+            // sem acesso ao estado da rede: mantém a resolução como está
+        }
         player.addListener(ouvinte)
         // As legendas começam desligadas; o usuário escolhe no menu
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
@@ -120,8 +168,7 @@ class ControleVideo(
             .build()
     }
 
-    /** Prepara o vídeo (com as legendas laterais) e retoma de onde parou. */
-    fun iniciar() {
+    private fun montarItem(uri: String, chaveCache: String): MediaItem {
         val legendas = legendasLaterais.map { l ->
             MediaItem.SubtitleConfiguration.Builder(Uri.parse(API + l.id + "?alt=media"))
                 .setMimeType(if (l.name.endsWith(".vtt", true)) MimeTypes.TEXT_VTT else MimeTypes.APPLICATION_SUBRIP)
@@ -129,11 +176,16 @@ class ControleVideo(
                 .setSelectionFlags(0)
                 .build()
         }
-        val item = MediaItem.Builder()
-            .setUri(API + arquivo.id + "?alt=media")
-            .setCustomCacheKey(vm.chaveCache(arquivo))
+        return MediaItem.Builder()
+            .setUri(uri)
+            .setCustomCacheKey(chaveCache)
             .setSubtitleConfigurations(legendas)
             .build()
+    }
+
+    /** Prepara o vídeo original (com as legendas laterais) e retoma de onde parou. */
+    fun iniciar() {
+        val item = montarItem(API + arquivo.id + "?alt=media", vm.chaveCache(arquivo))
         val antes = vm.progresso(arquivo)
         player.setMediaItem(item)
         if (antes != null && antes.posicaoMs > 5_000 && antes.posicaoMs < antes.duracaoMs * 0.9) {
@@ -247,6 +299,58 @@ class ControleVideo(
         return listOf("FPS" to texto)
     }
 
+    // ---------- resolução ----------
+
+    /** Descobre as resoluções disponíveis: a original e as versões convertidas menores que ela. */
+    private suspend fun carregarQualidades() {
+        val original = Qualidade("${rotuloAltura(alturaOriginal)} (original)", alturaOriginal, null, true)
+        val convertidas = try {
+            vm.midia.formatosConvertidos(email, arquivo.id)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            emptyList()
+        }
+        val menores = convertidas.filter { it.altura < alturaOriginal }.map { Qualidade(rotuloAltura(it.altura), it.altura, it.url, false) }
+        qualidades = listOf(original) + menores
+        qualidadeAtual = original
+        aplicarPolitica()
+    }
+
+    /** Padrão: até 1080p no Wi-Fi e até 540p (ou a mais próxima abaixo) nos dados móveis. Só vale sem escolha manual. */
+    private fun aplicarPolitica() {
+        if (!qualidadeAutomatica || qualidades.isEmpty()) return
+        val alvo = if (redeWifi) 1080 else 540
+        val escolha = qualidades.filter { it.altura <= alvo }.maxByOrNull { it.altura }
+            ?: qualidades.minByOrNull { it.altura } ?: return
+        if (escolha !== qualidadeAtual) trocarPara(escolha)
+    }
+
+    private fun trocarPara(q: Qualidade) {
+        val pos = player.currentPosition
+        val tocava = player.playWhenReady
+        val item = if (q.original) {
+            montarItem(API + arquivo.id + "?alt=media", vm.chaveCache(arquivo))
+        } else {
+            montarItem(q.url ?: return, vm.chaveCache(arquivo) + "|conv|" + q.altura)
+        }
+        qualidadeAtual = q
+        player.setMediaItem(item, pos)
+        player.prepare()
+        player.playWhenReady = tocava
+    }
+
+    /** Escolha manual de resolução (null volta ao automático). Com escolha manual, a rede não muda mais nada. */
+    fun escolherQualidade(q: Qualidade?) {
+        if (q == null) {
+            qualidadeAutomatica = true
+            aplicarPolitica()
+        } else {
+            qualidadeAutomatica = false
+            if (q !== qualidadeAtual) trocarPara(q)
+        }
+    }
+
     // ---------- Chromecast ----------
 
     /** Reage à conexão com a TV: pausa aqui e manda o vídeo para a TV a partir da posição atual. */
@@ -289,6 +393,7 @@ class ControleVideo(
 
     fun liberar() {
         salvarAgora()
+        try { gerenteRede?.unregisterNetworkCallback(ouvinteRede) } catch (e: Exception) { }
         player.removeListener(ouvinte)
         cast.soltar()
         player.release()

@@ -3,19 +3,27 @@ package com.nekodrive.app.ui.galeria
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -65,7 +73,7 @@ fun CirculoVidro(aoClicar: () -> Unit, modifier: Modifier = Modifier, conteudo: 
     ) { conteudo() }
 }
 
-/** Vários botões agrupados numa única pílula de vidro com blur. */
+/** Vários botões (ou um texto) agrupados numa única pílula de vidro com blur. */
 @Composable
 fun PilulaVidro(modifier: Modifier = Modifier, conteudo: @Composable RowScope.() -> Unit) {
     Row(
@@ -76,8 +84,45 @@ fun PilulaVidro(modifier: Modifier = Modifier, conteudo: @Composable RowScope.()
     )
 }
 
-/** Ícone branco para usar sobre o vidro. */
+/** Ícone para usar sobre o vidro. */
 @Composable
 fun BotaoVidro(icone: ImageVector, descricao: String, aoClicar: () -> Unit, tint: Color = Color.White) {
     IconButton(onClick = aoClicar) { Icon(icone, descricao, tint = tint) }
+}
+
+/**
+ * Menu com blur (no lugar do menu opaco do sistema): fica na mesma composição, então o vidro desfoca o que está atrás.
+ * Tocar fora fecha.
+ */
+@Composable
+fun MenuVidro(
+    aberto: Boolean,
+    aoFechar: () -> Unit,
+    modifier: Modifier = Modifier,
+    conteudo: @Composable ColumnScope.() -> Unit,
+) {
+    Dissolver(aberto, Modifier.fillMaxSize(), entradaMs = 160, saidaMs = 200) {
+        Box(
+            Modifier.fillMaxSize().clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = aoFechar,
+            ),
+        )
+        Column(
+            modifier.clip(RoundedCornerShape(22.dp)).vidro().widthIn(min = 220.dp).padding(vertical = 8.dp),
+            content = conteudo,
+        )
+    }
+}
+
+@Composable
+fun ItemMenuVidro(texto: String, aoClicar: () -> Unit, marcado: Boolean = false, cor: Color = Color.White) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = aoClicar).padding(horizontal = 18.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(texto, color = cor, modifier = Modifier.weight(1f))
+        if (marcado) Text("✓", color = cor)
+    }
 }
