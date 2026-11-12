@@ -154,3 +154,21 @@ O workflow se recusa a rodar se `KEYSTORE_BASE64` já existir, para você não t
 - Menus de informações só mostram o que o Drive confirma (data de criação, envio, nome, local, tamanho, resolução, formato, dispositivo/câmera quando houver EXIF, conta proprietária, link); FPS vem do player
 - Arquivos que o app não abre oferecem abrir com outro app (também no erro do player)
 - Ícones arredondados (Material Icons Rounded)
+
+## Ajustes de comportamento (segunda rodada de UI)
+
+- Botão Drive: volta à raiz pasta por pasta, com a animação normal de fechar a cada passo
+- Só a página ativa da galeria é elemento compartilhado (sem miniaturas "duplas" ao abrir); a mídia expande opaca, sem fade
+- Fechamento integrado (gesto, botão de voltar ou círculo): encolher suave + perspectiva sutil (aceleração) + voo até a miniatura ao mesmo tempo
+- Cantos da miniatura mudam aos poucos para cantos retos (galeria e tela da pasta)
+- Pasta: o card (miniatura + legenda, mesma cor) vira a tela da pasta, com o mesmo formato e a mesma cor durante a animação
+- Botões de busca, ordem e grade/lista, voltar e seleção em círculos/pílulas de vidro (sem barra de fundo)
+- Todos os blurs com +35% de saturação; menus do player com blur (feitos na própria composição)
+- Cor mais frequente da mídia tinge o card e o texto da grade, aos poucos, quando a miniatura carrega
+- GIFs e imagens animadas em loop (miniaturas em baixa resolução, sem reduzir os quadros)
+- Toque duplo: zoom nas fotos; no vídeo, laterais ±10 s e centro aplica/reduz o zoom
+- Giro de foto com zoom out suave e ajuste exato à proporção da imagem
+- Bounce e atualizar puxando a lista (quadrado de vidro com mola); grade e lista trocam com deslize suave
+- Favoritar pastas (abrem no Drive pelo Favoritos); compartilhar; abrir em outro player (streaming local) ou outro app
+- Arquivos que não são mídia baixam para a pasta Downloads do Android
+- Player: resolução original e versões convertidas disponíveis; padrão 1080p no Wi-Fi e 540p (ou a mais próxima abaixo) em dados, com ajuste automático pela rede enquanto você não escolher
