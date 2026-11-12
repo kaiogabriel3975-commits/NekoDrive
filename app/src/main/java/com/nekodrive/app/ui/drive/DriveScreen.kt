@@ -142,7 +142,7 @@ internal fun Modifier.transicaoPasta(
             enter = EnterTransition.None,
             exit = if (desvanecerOrigem) fadeOut(tween(140)) else ExitTransition.None,
             boundsTransform = CurvaSuave,
-            resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds,
+            resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds(),
         )
     }
 
@@ -159,7 +159,7 @@ internal fun Modifier.transicaoMidia(
     av: AnimatedVisibilityScope,
 ): Modifier = with(st) {
     this@transicaoMidia.sharedElement(
-        sharedContentState = rememberSharedContentState(key = chave),
+        state = rememberSharedContentState(key = chave),
         animatedVisibilityScope = av,
         boundsTransform = CurvaSuave,
     )
