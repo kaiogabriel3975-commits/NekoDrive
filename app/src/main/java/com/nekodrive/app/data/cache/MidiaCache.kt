@@ -144,6 +144,9 @@ class MidiaCache(context: Context, private val auth: AuthManager, limiteGb: Int)
 
     fun urlOriginal(id: String): String = url(id)
 
+    /** Chave estável e isolada por conta para todos os recursos do cache. */
+    fun chave(email: String, id: String): String = "$email|$id"
+
     /**
      * Versões convertidas (mp4) que o Drive gera para streaming, da maior para a menor altura.
      * Usa um endereço NÃO oficial do Drive, que pode mudar ou deixar de funcionar.
