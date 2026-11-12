@@ -1,32 +1,41 @@
 package com.nekodrive.app.ui.drive
 
+import android.graphics.drawable.BitmapDrawable
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.BoundsTransform
+import androidx.compose.animation.EnterExitState
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.animateColor
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.animateDp
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalOverscrollConfiguration
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -34,10 +43,10 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
@@ -48,16 +57,15 @@ import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -65,6 +73,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -78,22 +87,62 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.nekodrive.app.data.drive.DriveFile
 import com.nekodrive.app.ui.FaixaVidro
+import com.nekodrive.app.ui.IndicadorAtualizar
 import com.nekodrive.app.ui.NomeUmaLinha
 import com.nekodrive.app.ui.abrirComOutroApp
 import com.nekodrive.app.ui.fonteVidro
+import com.nekodrive.app.ui.galeria.BotaoVidro
+import com.nekodrive.app.ui.galeria.CirculoVidro
+import com.nekodrive.app.ui.galeria.PilulaVidro
+import com.nekodrive.app.ui.rememberRebote
+import com.nekodrive.app.ui.vidro
 import kotlinx.coroutines.launch
+
+private val CurvaIOS = CubicBezierEasing(0.32f, 0.72f, 0f, 1f)
+
+/** Mesma duração de antes (cerca de 500 ms) com curva de desaceleração suave, no estilo das animações do iOS. */
+@OptIn(ExperimentalSharedTransitionApi::class)
+private val CurvaSuave = BoundsTransform { _, _ -> tween(durationMillis = 500, easing = CurvaIOS) }
+
+/**
+ * Elemento compartilhado entre a origem (card/miniatura) e o destino (tela da pasta ou galeria).
+ * Sem fade no conteúdo: o elemento se expande opaco. Com [desvanecerOrigem], o conteúdo do card (ícone e
+ * legenda) some rapidamente enquanto o card cresce.
+ */
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+internal fun Modifier.pastaBounds(
+    chave: String,
+    st: SharedTransitionScope,
+    av: AnimatedVisibilityScope,
+    desvanecerOrigem: Boolean = false,
+): Modifier =
+    with(st) {
+        this@pastaBounds.sharedBounds(
+            rememberSharedContentState(key = chave),
+            animatedVisibilityScope = av,
+            enter = EnterTransition.None,
+            exit = if (desvanecerOrigem) fadeOut(tween(140)) else ExitTransition.None,
+            boundsTransform = CurvaSuave,
+            resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
+        )
+    }
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -130,7 +179,7 @@ fun DriveScreen(
         AnimatedContent(
             targetState = chave,
             modifier = Modifier.fillMaxSize(),
-            transitionSpec = { fadeIn(tween(240)) togetherWith fadeOut(tween(240)) },
+            transitionSpec = { fadeIn(tween(1)) togetherWith fadeOut(tween(500)) },
             label = "pasta",
         ) { chavePagina ->
             PaginaPasta(
@@ -154,8 +203,8 @@ fun DriveScreen(
         ) {
             Barra(vm) { confirmar = true }
             vm.erro?.let { msg ->
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(msg, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
+                PilulaVidro(Modifier.padding(horizontal = 12.dp)) {
+                    Text(msg, Modifier.padding(start = 10.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     TextButton(onClick = { vm.recarregar() }) { Text("Tentar de novo") }
                 }
             }
@@ -189,47 +238,60 @@ fun DriveScreen(
     }
 }
 
-// ---------- barra superior da tela (caminho, busca, ordenação, modo) ----------
+// ---------- botões flutuantes do topo (cada um em círculo ou pílula de vidro) ----------
 
 @Composable
 private fun Barra(vm: DriveViewModel, aoExcluir: () -> Unit) {
-    if (vm.selecionados.isNotEmpty()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { vm.limparSelecao() }) { Icon(Icons.Rounded.Close, "Cancelar seleção") }
-            Text("${vm.selecionados.size} selecionado(s)", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-            IconButton(onClick = { vm.favoritarSelecao(vm.itens) }) { Icon(Icons.Rounded.StarBorder, "Favoritar") }
-            IconButton(onClick = { vm.baixarSelecionados() }) { Icon(Icons.Rounded.Download, "Baixar") }
-            IconButton(onClick = aoExcluir) { Icon(Icons.Rounded.Delete, "Mover para a lixeira") }
-        }
-    } else if (vm.buscando) {
-        val foco = remember { FocusRequester() }
-        LaunchedEffect(Unit) { foco.requestFocus() }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { vm.sairDaBusca() }) { Icon(Icons.Rounded.Close, "Fechar busca") }
-            TextField(
-                value = vm.termo,
-                onValueChange = { vm.definirTermo(it) },
-                placeholder = { Text("Buscar no Drive") },
-                singleLine = true,
-                modifier = Modifier.weight(1f).focusRequester(foco),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                ),
-            )
-        }
-    } else {
-        var menuOrdem by remember { mutableStateOf(false) }
-        Row(
-            Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = { vm.iniciarBusca() }) { Icon(Icons.Rounded.Search, "Buscar") }
+    val cor = MaterialTheme.colorScheme.onSurface
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (vm.selecionados.isNotEmpty()) {
+            CirculoVidro(aoClicar = { vm.limparSelecao() }) { Icon(Icons.Rounded.Close, "Cancelar seleção", tint = cor) }
+            PilulaVidro {
+                Text(
+                    "${vm.selecionados.size} selecionado(s)",
+                    Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = cor,
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            PilulaVidro {
+                BotaoVidro(Icons.Rounded.StarBorder, "Favoritar", { vm.favoritarSelecao(vm.itens) }, cor)
+                BotaoVidro(Icons.Rounded.Download, "Baixar", { vm.baixarSelecionados() }, cor)
+                BotaoVidro(Icons.Rounded.Delete, "Mover para a lixeira", aoExcluir, cor)
+            }
+        } else if (vm.buscando) {
+            val foco = remember { FocusRequester() }
+            LaunchedEffect(Unit) { foco.requestFocus() }
+            CirculoVidro(aoClicar = { vm.sairDaBusca() }) { Icon(Icons.Rounded.Close, "Fechar busca", tint = cor) }
+            Box(Modifier.weight(1f).clip(RoundedCornerShape(50)).vidro()) {
+                TextField(
+                    value = vm.termo,
+                    onValueChange = { vm.definirTermo(it) },
+                    placeholder = { Text("Buscar no Drive") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().focusRequester(foco),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                    ),
+                )
+            }
+        } else {
+            var menuOrdem by remember { mutableStateOf(false) }
+            if (vm.pilha.size > 1) {
+                CirculoVidro(aoClicar = { vm.voltar() }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Voltar", tint = cor) }
+            }
+            Spacer(Modifier.weight(1f))
+            CirculoVidro(aoClicar = { vm.iniciarBusca() }) { Icon(Icons.Rounded.Search, "Buscar", tint = cor) }
             Box {
-                IconButton(onClick = { menuOrdem = true }) { Icon(Icons.AutoMirrored.Rounded.Sort, "Ordenar") }
+                CirculoVidro(aoClicar = { menuOrdem = true }) { Icon(Icons.AutoMirrored.Rounded.Sort, "Ordenar", tint = cor) }
                 DropdownMenu(expanded = menuOrdem, onDismissRequest = { menuOrdem = false }) {
                     CampoOrdem.entries.forEach { campo ->
                         val seta = if (campo == vm.campo) (if (vm.crescente) "  ↑" else "  ↓") else ""
@@ -240,36 +302,20 @@ private fun Barra(vm: DriveViewModel, aoExcluir: () -> Unit) {
                     }
                 }
             }
-            IconButton(onClick = { vm.alternarModo() }) {
+            CirculoVidro(aoClicar = { vm.alternarModo() }) {
                 Icon(
                     if (vm.grade) Icons.AutoMirrored.Rounded.ViewList else Icons.Rounded.GridView,
                     "Alternar entre grade e lista",
+                    tint = cor,
                 )
             }
         }
     }
 }
 
-// ---------- página de uma pasta (com a animação de expansão) ----------
+// ---------- página de uma pasta ----------
 
-@OptIn(ExperimentalSharedTransitionApi::class)
-@Composable
-internal fun Modifier.pastaBounds(chave: String, st: SharedTransitionScope, av: AnimatedVisibilityScope): Modifier =
-    with(st) {
-        this@pastaBounds.sharedBounds(
-            rememberSharedContentState(key = chave),
-            animatedVisibilityScope = av,
-            boundsTransform = CurvaSuave,
-        )
-    }
-
-/** Mesma duração de antes (cerca de 500 ms) com uma curva de desaceleração suave, no estilo das animações do iOS. */
-@OptIn(ExperimentalSharedTransitionApi::class)
-private val CurvaSuave = BoundsTransform { _, _ ->
-    tween(durationMillis = 500, easing = CubicBezierEasing(0.32f, 0.72f, 0f, 1f))
-}
-
-@OptIn(ExperimentalSharedTransitionApi::class)
+@OptIn(ExperimentalSharedTransitionApi::class, ExperimentalFoundationApi::class)
 @Composable
 private fun PaginaPasta(
     atual: Boolean,
@@ -285,44 +331,79 @@ private fun PaginaPasta(
     val ultima = remember { mutableStateOf<List<DriveFile>>(emptyList()) }
     if (atual) SideEffect { ultima.value = vm.itens }
     val lista = if (atual) vm.itens else ultima.value
+    val grade = vm.grade
 
-    Surface(Modifier.pastaBounds("pasta-$chave", st, av).fonteVidro().fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Box(Modifier.fillMaxSize()) {
-            if (vm.grade) {
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(110.dp),
-                    state = vm.estadoGrade(chave),
-                    contentPadding = PaddingValues(
-                        start = 12.dp, end = 12.dp,
-                        top = espaco.calculateTopPadding() + 12.dp,
-                        bottom = espaco.calculateBottomPadding() + 12.dp,
-                    ),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxSize(),
-                ) {
-                    items(lista, key = { it.id }) { f ->
-                        ItemGrade(f, vm.token, f.id in vm.selecionados, vm.estadoDe(f), st, av, avExterno, { aoTocar(f) }, { vm.alternarSelecao(f) })
-                    }
-                    if (atual && vm.temMais) {
-                        item(span = { GridItemSpan(maxLineSpan) }) { CarregandoMais(vm) }
-                    }
-                }
-            } else {
-                LazyColumn(
-                    Modifier.fillMaxSize(),
-                    state = vm.estadoLista(chave),
-                    contentPadding = PaddingValues(top = espaco.calculateTopPadding(), bottom = espaco.calculateBottomPadding()),
-                ) {
-                    items(lista, key = { it.id }) { f ->
-                        ItemLinha(f, vm.token, f.id in vm.selecionados, vm.estadoDe(f), st, av, avExterno, { aoTocar(f) }, { vm.alternarSelecao(f) })
-                    }
-                    if (atual && vm.temMais) {
-                        item { CarregandoMais(vm) }
+    // A tela da pasta nasce com o formato e a cor do card e vai virando tela cheia (e o contrário ao fechar)
+    val tema = MaterialTheme.colorScheme
+    val raio by av.transition.animateDp(transitionSpec = { tween(500, easing = CurvaIOS) }, label = "raio") {
+        if (it == EnterExitState.Visible) 0.dp else 14.dp
+    }
+    val fundo by av.transition.animateColor(transitionSpec = { tween(500, easing = CurvaIOS) }, label = "fundo") {
+        if (it == EnterExitState.Visible) tema.background else tema.surfaceVariant
+    }
+    val opacidadeConteudo by av.transition.animateFloat(transitionSpec = { tween(350) }, label = "conteudo") {
+        if (it == EnterExitState.Visible) 1f else 0f
+    }
+    val rebote = rememberRebote(carregando = vm.carregando && atual, aoAtualizar = { vm.atualizar() })
+
+    Surface(
+        Modifier.pastaBounds("pasta-$chave", st, av).fonteVidro().fillMaxSize(),
+        shape = RoundedCornerShape(raio),
+        color = fundo,
+    ) {
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = opacidadeConteudo }.nestedScroll(rebote)) {
+            Box(Modifier.fillMaxSize().graphicsLayer { translationY = rebote.deslocamento }) {
+                CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
+                    LazyVerticalGrid(
+                        columns = if (grade) GridCells.Adaptive(110.dp) else GridCells.Fixed(1),
+                        state = vm.estadoGrade(chave),
+                        contentPadding = PaddingValues(
+                            start = if (grade) 12.dp else 0.dp,
+                            end = if (grade) 12.dp else 0.dp,
+                            top = espaco.calculateTopPadding() + if (grade) 12.dp else 0.dp,
+                            bottom = espaco.calculateBottomPadding() + if (grade) 12.dp else 0.dp,
+                        ),
+                        horizontalArrangement = Arrangement.spacedBy(if (grade) 8.dp else 0.dp),
+                        verticalArrangement = Arrangement.spacedBy(if (grade) 8.dp else 0.dp),
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        items(lista, key = { it.id }) { f ->
+                            // Ao trocar entre grade e lista, os itens deslizam suavemente para o novo lugar
+                            Box(
+                                Modifier.animateItem(
+                                    fadeInSpec = null,
+                                    fadeOutSpec = null,
+                                    placementSpec = spring(
+                                        dampingRatio = 0.85f,
+                                        stiffness = 380f,
+                                        visibilityThreshold = IntOffset.VisibilityThreshold,
+                                    ),
+                                ),
+                            ) {
+                                if (grade) {
+                                    ItemGrade(
+                                        f, vm.token, f.id in vm.selecionados, vm.estadoDe(f), st, av, avExterno,
+                                        { aoTocar(f) }, { vm.alternarSelecao(f) },
+                                    )
+                                } else {
+                                    ItemLinha(
+                                        f, vm.token, f.id in vm.selecionados, vm.estadoDe(f), st, av, avExterno,
+                                        { aoTocar(f) }, { vm.alternarSelecao(f) },
+                                    )
+                                }
+                            }
+                        }
+                        if (atual && vm.temMais) {
+                            item(span = { GridItemSpan(maxLineSpan) }) { CarregandoMais(vm) }
+                        }
                     }
                 }
             }
             if (atual) {
+                IndicadorAtualizar(
+                    rebote,
+                    Modifier.align(Alignment.TopCenter).padding(top = espaco.calculateTopPadding() + 8.dp),
+                )
                 if (vm.carregando && lista.isEmpty()) {
                     CircularProgressIndicator(Modifier.align(Alignment.Center))
                 } else if (!vm.carregando && lista.isEmpty() && vm.erro == null) {
@@ -348,17 +429,37 @@ private fun CarregandoMais(vm: DriveViewModel) {
 
 // ---------- itens ----------
 
+/** Miniatura (ou ícone) do arquivo, com os indicadores de cache, assistido e favorito. */
 @Composable
-private fun Miniatura(f: DriveFile, token: String?, estado: EstadoArquivo, tamanhoIcone: Dp, modifier: Modifier = Modifier) {
+private fun Miniatura(
+    f: DriveFile,
+    token: String?,
+    estado: EstadoArquivo,
+    tamanhoIcone: Dp,
+    modifier: Modifier = Modifier,
+    fundo: Color = Color.Transparent,
+    aoCor: ((Color) -> Unit)? = null,
+) {
     val context = LocalContext.current
-    Box(modifier.background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
-        if (f.thumbnailLink != null && !f.isFolder) {
+    val ehGif = f.mimeType == "image/gif"
+    Box(modifier.background(fundo), contentAlignment = Alignment.Center) {
+        if (!f.isFolder && (f.thumbnailLink != null || ehGif)) {
+            // GIFs animam na miniatura, em baixa resolução e sem reduzir os quadros por segundo
             val request = ImageRequest.Builder(context)
-                .data(f.thumbnailLink)
+                .data(if (ehGif) "https://www.googleapis.com/drive/v3/files/${f.id}?alt=media" else f.thumbnailLink)
                 .apply { if (token != null) addHeader("Authorization", "Bearer $token") }
+                .apply { if (ehGif) { size(256, 256); emLoop() } }
+                .allowHardware(false)
                 .crossfade(true)
                 .build()
-            AsyncImage(request, f.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            AsyncImage(
+                request, f.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
+                onSuccess = { s ->
+                    if (aoCor != null) {
+                        (s.result.drawable as? BitmapDrawable)?.bitmap?.let { b -> aoCor(corDominante(b)) }
+                    }
+                },
+            )
         } else {
             val icone = when {
                 f.isFolder -> Icons.Rounded.Folder
@@ -402,6 +503,10 @@ private fun Miniatura(f: DriveFile, token: String?, estado: EstadoArquivo, taman
     }
 }
 
+/**
+ * Card da grade: miniatura e legenda formam uma peça só, na mesma cor. Em fotos e vídeos a cor segue a cor que
+ * mais aparece na mídia (surge aos poucos quando a miniatura carrega). Em pastas, o card inteiro é a origem da animação.
+ */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
 internal fun ItemGrade(
@@ -416,34 +521,61 @@ internal fun ItemGrade(
     onLongClick: () -> Unit,
 ) {
     val haptico = LocalHapticFeedback.current
-    val borda = if (selecionado) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null
-    val origem = when {
-        f.isFolder -> Modifier.pastaBounds("pasta-${f.id}", st, av)
+    val tema = MaterialTheme.colorScheme
+    var dominante by remember(f.id) { mutableStateOf(CoresMidia.obter(f.id)) }
+    val alvoCard = dominante?.let { lerp(tema.surfaceVariant, it, 0.55f) } ?: tema.surfaceVariant
+    val corCard by animateColorAsState(alvoCard, tween(700), label = "corCard")
+    val alvoTexto = when {
+        dominante == null -> tema.onSurfaceVariant
+        corCard.luminance() > 0.5f -> Color(0xFF1B1B1F)
+        else -> Color.White
+    }
+    val corTexto by animateColorAsState(alvoTexto, tween(700), label = "corTexto")
+
+    val forma = RoundedCornerShape(14.dp)
+    val origemCard = if (f.isFolder) Modifier.pastaBounds("pasta-${f.id}", st, av, desvanecerOrigem = true) else Modifier
+    val origemMiniatura = when {
         f.isImage -> Modifier.pastaBounds("foto-${f.id}", st, avExterno)
         f.isVideo -> Modifier.pastaBounds("video-${f.id}", st, avExterno)
         else -> Modifier
     }
-    Card(
-        modifier = Modifier.combinedClickable(
-            onClick = onClick,
-            onLongClick = { haptico.performHapticFeedback(HapticFeedbackType.LongPress); onLongClick() },
-        ),
-        border = borda,
+    Column(
+        Modifier.then(origemCard)
+            .clip(forma)
+            .background(corCard)
+            .then(if (selecionado) Modifier.border(3.dp, tema.primary, forma) else Modifier)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = { haptico.performHapticFeedback(HapticFeedbackType.LongPress); onLongClick() },
+            ),
     ) {
-        Box(Modifier.fillMaxWidth().aspectRatio(1f).then(origem)) {
-            Miniatura(f, token, estado, 44.dp, Modifier.fillMaxSize())
+        Box(Modifier.fillMaxWidth().aspectRatio(1f).then(origemMiniatura)) {
+            Miniatura(
+                f, token, estado, 44.dp, Modifier.fillMaxSize(),
+                aoCor = if (f.isImage || f.isVideo) {
+                    { c ->
+                        if (c != Color.Unspecified) {
+                            CoresMidia.guardar(f.id, c)
+                            dominante = c
+                        }
+                    }
+                } else {
+                    null
+                },
+            )
             if (selecionado) {
                 Icon(
                     Icons.Rounded.CheckCircle, contentDescription = "Selecionado",
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = tema.primary,
                     modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(24.dp),
                 )
             }
         }
-        NomeUmaLinha(f.name, Modifier.fillMaxWidth().padding(8.dp), style = MaterialTheme.typography.bodySmall)
+        NomeUmaLinha(f.name, Modifier.fillMaxWidth().padding(8.dp), style = MaterialTheme.typography.bodySmall, color = corTexto)
     }
 }
 
+/** Linha da lista: só a miniatura é a origem da animação (nunca a linha inteira). */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
 internal fun ItemLinha(
@@ -457,13 +589,13 @@ internal fun ItemLinha(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
+    val haptico = LocalHapticFeedback.current
     val origem = when {
-        f.isFolder -> Modifier.pastaBounds("pasta-${f.id}", st, av)
+        f.isFolder -> Modifier.pastaBounds("pasta-${f.id}", st, av, desvanecerOrigem = true)
         f.isImage -> Modifier.pastaBounds("foto-${f.id}", st, avExterno)
         f.isVideo -> Modifier.pastaBounds("video-${f.id}", st, avExterno)
         else -> Modifier
     }
-    val haptico = LocalHapticFeedback.current
     val fundo = if (selecionado) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
     Row(
         Modifier.fillMaxWidth()
@@ -475,7 +607,11 @@ internal fun ItemLinha(
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Miniatura(f, token, estado, 28.dp, Modifier.size(56.dp).then(origem).clip(RoundedCornerShape(8.dp)))
+        Miniatura(
+            f, token, estado, 28.dp,
+            Modifier.size(56.dp).then(origem).clip(RoundedCornerShape(10.dp)),
+            fundo = MaterialTheme.colorScheme.surfaceVariant,
+        )
         Column(Modifier.weight(1f).padding(start = 12.dp)) {
             NomeUmaLinha(f.name, Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyLarge)
             val sub = listOfNotNull(formatarData(f.modifiedTime), formatarTamanho(f.size)).joinToString("  ·  ")

@@ -1,5 +1,8 @@
 package com.nekodrive.app.ui.drive
 
+import android.content.ContentValues
+import android.os.Environment
+import android.provider.MediaStore
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.runtime.getValue
@@ -25,6 +28,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 import java.net.UnknownHostException
 
 data class Pasta(val id: String, val nome: String)
@@ -69,6 +73,10 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     val progressos = mutableStateMapOf<String, Float>()
     private val tarefas = HashMap<String, Job>()
     val midia get() = c.midia
+
+    /** Mensagem curta para o usuário (por exemplo, arquivo salvo em Downloads). */
+    var aviso by mutableStateOf<String?>(null); private set
+    fun limparAviso() { aviso = null }
 
     // favoritos (locais) e lixeira
     var favoritosItens by mutableStateOf<List<DriveFile>>(emptyList()); private set
@@ -133,6 +141,33 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
 
     fun recarregar() = carregarPastaAtual(usarCache = false)
 
+    /** Atualiza a pasta atual mantendo a lista na tela até a nova chegar (puxar para atualizar). */
+    fun atualizar() {
+        val conta = contaAtual ?: return
+        job?.cancel()
+        selecionados = emptySet()
+        erro = null
+        job = viewModelScope.launch {
+            carregando = true
+            try {
+                val p = c.drive.list(conta.email, consulta(), ordenacao(), null)
+                itens = p.files
+                proxima = p.nextPageToken
+                temMais = proxima != null
+                token = c.auth.token(conta.email)
+                if (!buscando) cache.remove(chave(pilha.last().id))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: UnknownHostException) {
+                erro = "Sem conexão com a internet."
+            } catch (e: Exception) {
+                erro = e.message ?: "Falha ao atualizar a pasta."
+            } finally {
+                carregando = false
+            }
+        }
+    }
+
     private fun carregarPastaAtual(usarCache: Boolean) {
         job?.cancel()
         selecionados = emptySet()
@@ -191,20 +226,31 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
         carregarPastaAtual(usarCache = false)
     }
 
-    /** Toque no botão Drive: volta para a raiz (e para o topo da lista). */
+    /** Toque no botão Drive: volta à raiz, pasta por pasta, com a animação normal de fechar a cada passo. */
     fun irParaInicio() {
-        if (buscando) { job?.cancel(); buscando = false; termo = "" }
-        if (pilha.size > 1) {
-            pilha = listOf(raiz)
-            carregarPastaAtual(usarCache = true)
-        } else if (itens.isEmpty()) {
-            carregarPastaAtual(usarCache = true)
-        }
         selecionados = emptySet()
+        if (buscando) sairDaBusca()
         viewModelScope.launch {
-            val chave = chaveRolagemDrive()
-            if (grade) estadoGrade(chave).animateScrollToItem(0) else estadoLista(chave).animateScrollToItem(0)
+            while (pilha.size > 1) {
+                voltar()
+                delay(520)
+            }
+            try {
+                estadoGrade(chaveRolagemDrive()).animateScrollToItem(0)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // sem layout ainda: não há nada para rolar
+            }
         }
+    }
+
+    /** Abre uma pasta direto do Favoritos: o caminho passa a ser Meu Drive › pasta. */
+    fun abrirPastaDireto(f: DriveFile) {
+        if (buscando) { job?.cancel(); buscando = false; termo = "" }
+        pilha = listOf(raiz, Pasta(f.id, f.name))
+        reiniciarRolagem(f.id)
+        carregarPastaAtual(usarCache = false)
     }
 
     fun voltar(): Boolean {
@@ -367,7 +413,7 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
         val (chave, lista) = rolagem ?: (chaveRolagemDrive() to itens)
         val idx = lista.indexOfFirst { it.id == id }
         if (idx < 0) return
-        if (grade) {
+        if (grade || chave != "favoritos") {
             val e = estadoGrade(chave)
             if (e.layoutInfo.visibleItemsInfo.none { it.index == idx }) e.scrollToItem(idx)
         } else {
@@ -462,11 +508,20 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
 
     fun baixar(f: DriveFile) {
         val conta = contaAtual ?: return
-        if (f.isFolder || tarefas[f.id]?.isActive == true || c.midia.completo(conta.email, f)) return
+        if (f.isFolder || tarefas[f.id]?.isActive == true) return
+        val midia = f.isImage || f.isVideo
+        if (midia && c.midia.completo(conta.email, f)) return
         progressos[f.id] = 0f
         tarefas[f.id] = c.escopo.launch {
             try {
-                c.semaforo.withPermit { c.midia.baixar(conta.email, f) { p -> progressos[f.id] = p } }
+                c.semaforo.withPermit {
+                    if (midia) {
+                        c.midia.baixar(conta.email, f) { p -> progressos[f.id] = p }
+                    } else {
+                        salvarEmDownloads(conta.email, f)
+                    }
+                }
+                if (!midia) aviso = "“${f.name}” salvo em Downloads"
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -475,6 +530,28 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
                 progressos.remove(f.id)
                 versaoCache++
             }
+        }
+    }
+
+    /** Arquivos que não são fotos nem vídeos são salvos na pasta Downloads do Android (não no cache do app). */
+    private suspend fun salvarEmDownloads(email: String, f: DriveFile) = withContext(Dispatchers.IO) {
+        val resolver = c.resolver
+        val valores = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, f.name)
+            put(MediaStore.Downloads.MIME_TYPE, f.mimeType.ifEmpty { "application/octet-stream" })
+            put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            put(MediaStore.Downloads.IS_PENDING, 1)
+        }
+        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, valores)
+            ?: throw IOException("Não foi possível criar o arquivo em Downloads")
+        try {
+            val saida = resolver.openOutputStream(uri) ?: throw IOException("Não foi possível gravar em Downloads")
+            saida.use { c.drive.baixarParaStream(email, f.id, it) { p -> progressos[f.id] = p } }
+            val concluido = ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }
+            resolver.update(uri, concluido, null, null)
+        } catch (e: Exception) {
+            resolver.delete(uri, null, null)
+            throw e
         }
     }
 
@@ -514,7 +591,6 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
 
     fun alternarFavorito(f: DriveFile) {
         val conta = contaAtual ?: return
-        if (f.isFolder) return
         val novos = if (f.id in favoritosIds) favoritosItens.filterNot { it.id == f.id } else listOf(f) + favoritosItens
         gravarFavoritos(conta.email, novos)
     }
@@ -522,7 +598,7 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     /** Se todos os selecionados já são favoritos, remove; senão, adiciona os que faltam. */
     fun favoritarSelecao(origem: List<DriveFile>) {
         val conta = contaAtual ?: return
-        val alvo = origem.filter { it.id in selecionados && !it.isFolder }
+        val alvo = origem.filter { it.id in selecionados }
         if (alvo.isEmpty()) { selecionados = emptySet(); return }
         val ids = alvo.map { it.id }.toSet()
         val novos = if (alvo.all { it.id in favoritosIds }) {
