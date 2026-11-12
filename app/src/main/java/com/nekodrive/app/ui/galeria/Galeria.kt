@@ -222,6 +222,13 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
 
     // progresso: 0 = galeria aberta, 1 = fechada. aparecer: opacidade do fundo preto (a mídia nunca fica transparente)
     val progresso = remember { Animatable(0f) }
+    // Progresso único do fechamento: vem da mesma transição que move os sharedBounds.
+    // A inclinação/escala não usa um segundo relógio independente.
+    val progressoSaida by av.transition.animateFloat(
+        transitionSpec = { tween(durationMillis = 500, easing = CurvaIOS) },
+        label = "progressoFechamentoCompartilhado",
+    ) { estado -> if (estado == EnterExitState.Visible) 0f else 1f }
+    val progressoComposto = { maxOf(progresso.value, progressoSaida) }
     val aparecer = remember { Animatable(0f) }
     var abriu by remember { mutableStateOf(false) }
     var fechando by remember { mutableStateOf(false) }
@@ -235,11 +242,10 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
     fun fechar() {
         if (fechando) return
         fechando = true
+        // Inicia a saída dos sharedBounds. A transformação 3D lê progressoSaida,
+        // derivado desta mesma transição, portanto inclinação e retorno acontecem juntos.
         vm.fecharFoto()
-        scope.launch { aparecer.animateTo(0f, tween(450)) }
-        // A inclinação/escala interna acompanha a mesma curva e duração dos sharedBounds (500 ms).
-        // Assim, o conteúdo não termina o movimento antes/depois do retorno da miniatura.
-        scope.launch { progresso.animateTo(1f, tween(durationMillis = 500, easing = CurvaIOS)) }
+        scope.launch { aparecer.animateTo(0f, tween(500, easing = CurvaIOS)) }
     }
 
     // Vidro com blur da galeria: o pager é a fonte; botões e pílulas desfocam o que passa por baixo
@@ -408,7 +414,7 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                                     ctrl = if (i == ativa) ctrl else null,
                                     token = vm.token,
                                     compartilhar = i == ativa,
-                                    progresso = { progresso.value },
+                                    progresso = progressoComposto,
                                     st = st,
                                     av = av,
                                     aoZoom = { zoomado = it },
@@ -423,7 +429,7 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                                     giro = giros[f.id] ?: 0,
                                     ehAtual = i == ativa,
                                     compartilhar = i == ativa,
-                                    progresso = { progresso.value },
+                                    progresso = progressoComposto,
                                     st = st,
                                     av = av,
                                     aoZoom = { zoomado = it },
