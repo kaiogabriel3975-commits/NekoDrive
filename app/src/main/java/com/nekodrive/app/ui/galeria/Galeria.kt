@@ -237,7 +237,9 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
         fechando = true
         vm.fecharFoto()
         scope.launch { aparecer.animateTo(0f, tween(450)) }
-        scope.launch { progresso.animateTo(1f, spring(dampingRatio = 1f, stiffness = 110f)) }
+        // A inclinação/escala interna acompanha a mesma curva e duração dos sharedBounds (500 ms).
+        // Assim, o conteúdo não termina o movimento antes/depois do retorno da miniatura.
+        scope.launch { progresso.animateTo(1f, tween(durationMillis = 500, easing = CurvaIOS)) }
     }
 
     // Vidro com blur da galeria: o pager é a fonte; botões e pílulas desfocam o que passa por baixo
