@@ -20,7 +20,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animate
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateDp
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.spring
@@ -141,7 +140,7 @@ import com.nekodrive.app.ui.compartilharArquivo
 import com.nekodrive.app.ui.drive.DriveViewModel
 import com.nekodrive.app.ui.drive.FotosAbertas
 import com.nekodrive.app.ui.drive.emLoop
-import com.nekodrive.app.ui.drive.pastaBounds
+import com.nekodrive.app.ui.drive.transicaoMidia
 import com.nekodrive.app.ui.fonteVidro
 import com.nekodrive.app.ui.player.CastControle
 import dev.chrisbanes.haze.HazeState
@@ -173,27 +172,6 @@ private fun tempo(ms: Long): String {
 }
 
 /**
- * Efeito de fechamento integrado: a mídia encolhe de leve em direção ao centro e o topo inclina para trás em
- * perspectiva (base como referência). [progresso] vai de 0 a 1; a inclinação cresce com o quadrado dele,
- * então começa devagar e ganha velocidade (aceleração). Usado tanto no gesto quanto nos botões de voltar.
- */
-private fun Modifier.efeitoFechar(progresso: () -> Float): Modifier = this
-    .graphicsLayer {
-        val q = progresso()
-        val suave = q * q * (3f - 2f * q)
-        val s = 1f - 0.07f * suave
-        scaleX = s
-        scaleY = s
-        translationY = q * size.height * 0.10f
-    }
-    .graphicsLayer {
-        val q = progresso()
-        rotationX = 9f * q * q
-        transformOrigin = TransformOrigin(0.5f, 1f)
-        cameraDistance = 14f * density
-    }
-
-/**
  * Galeria em tela cheia: fotos e vídeos da pasta na mesma sequência, com deslize horizontal.
  * Fotos: zoom, giro, copiar, compartilhar, baixar, favoritar, informações e excluir. Vídeos: player com gestos.
  */
@@ -223,13 +201,6 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
 
     // progresso: 0 = galeria aberta, 1 = fechada. aparecer: opacidade do fundo preto (a mídia nunca fica transparente)
     val progresso = remember { Animatable(0f) }
-    // Progresso único do fechamento: vem da mesma transição que move os sharedBounds.
-    // A inclinação/escala não usa um segundo relógio independente.
-    val progressoSaida by av.transition.animateFloat(
-        transitionSpec = { tween(durationMillis = 500, easing = CurvaIOS) },
-        label = "progressoFechamentoCompartilhado",
-    ) { estado -> if (estado == EnterExitState.Visible) 0f else 1f }
-    val progressoComposto = { maxOf(progresso.value, progressoSaida) }
     val aparecer = remember { Animatable(0f) }
     var abriu by remember { mutableStateOf(false) }
     var fechando by remember { mutableStateOf(false) }
@@ -243,8 +214,7 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
     fun fechar() {
         if (fechando) return
         fechando = true
-        // Inicia a saída dos sharedBounds. A transformação 3D lê progressoSaida,
-        // derivado desta mesma transição, portanto inclinação e retorno acontecem juntos.
+        // A transição do próprio elemento compartilhado conduz o retorno.
         vm.fecharFoto()
         scope.launch { aparecer.animateTo(0f, tween(500, easing = CurvaIOS)) }
     }
@@ -415,7 +385,6 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                                     ctrl = if (i == ativa) ctrl else null,
                                     token = vm.token,
                                     compartilhar = i == ativa,
-                                    progresso = progressoComposto,
                                     st = st,
                                     av = av,
                                     aoZoom = { zoomado = it },
@@ -430,7 +399,6 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                                     giro = giros[f.id] ?: 0,
                                     ehAtual = i == ativa,
                                     compartilhar = i == ativa,
-                                    progresso = progressoComposto,
                                     st = st,
                                     av = av,
                                     aoZoom = { zoomado = it },
@@ -688,7 +656,6 @@ private fun PaginaFoto(
     giro: Int,
     ehAtual: Boolean,
     compartilhar: Boolean,
-    progresso: () -> Float,
     st: SharedTransitionScope,
     av: AnimatedVisibilityScope,
     aoZoom: (Boolean) -> Unit,
@@ -707,9 +674,9 @@ private fun PaginaFoto(
     val raio by av.transition.animateDp(transitionSpec = { tween(500, easing = CurvaIOS) }, label = "raio") {
         if (it == EnterExitState.Visible) 0.dp else 14.dp
     }
-    val origem = if (compartilhar) Modifier.pastaBounds("foto-${f.id}", st, av) else Modifier
+    val origem = if (compartilhar) Modifier.transicaoMidia("foto-${f.id}", st, av) else Modifier
 
-    BoxWithConstraints(Modifier.fillMaxSize().then(origem).efeitoFechar(progresso)) {
+    BoxWithConstraints(Modifier.fillMaxSize().then(origem)) {
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
 
@@ -843,7 +810,6 @@ private fun PaginaVideo(
     ctrl: ControleVideo?,
     token: String?,
     compartilhar: Boolean,
-    progresso: () -> Float,
     st: SharedTransitionScope,
     av: AnimatedVisibilityScope,
     aoZoom: (Boolean) -> Unit,
@@ -857,9 +823,9 @@ private fun PaginaVideo(
     val raio by av.transition.animateDp(transitionSpec = { tween(500, easing = CurvaIOS) }, label = "raio") {
         if (it == EnterExitState.Visible) 0.dp else 14.dp
     }
-    val origem = if (compartilhar) Modifier.pastaBounds("video-${f.id}", st, av) else Modifier
+    val origem = if (compartilhar) Modifier.transicaoMidia("video-${f.id}", st, av) else Modifier
 
-    BoxWithConstraints(Modifier.fillMaxSize().then(origem).efeitoFechar(progresso)) {
+    BoxWithConstraints(Modifier.fillMaxSize().then(origem)) {
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
 
