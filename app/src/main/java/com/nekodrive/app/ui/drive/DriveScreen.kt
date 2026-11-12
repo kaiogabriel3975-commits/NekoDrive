@@ -439,6 +439,7 @@ private fun Miniatura(
     modifier: Modifier = Modifier,
     fundo: Color = Color.Transparent,
     aoCor: ((Color) -> Unit)? = null,
+    escalaConteudo: ContentScale = ContentScale.Crop,
 ) {
     val context = LocalContext.current
     val ehGif = f.mimeType == "image/gif"
@@ -453,7 +454,7 @@ private fun Miniatura(
                 .crossfade(true)
                 .build()
             AsyncImage(
-                request, f.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
+                request, f.name, Modifier.fillMaxSize(), contentScale = escalaConteudo,
                 onSuccess = { s ->
                     if (aoCor != null) {
                         (s.result.drawable as? BitmapDrawable)?.bitmap?.let { b -> aoCor(corDominante(b)) }
@@ -552,6 +553,9 @@ internal fun ItemGrade(
         Box(Modifier.fillMaxWidth().aspectRatio(1f).then(origemMiniatura)) {
             Miniatura(
                 f, token, estado, 44.dp, Modifier.fillMaxSize(),
+                escalaConteudo = if (
+                    f.isImage && avExterno.transition.targetState == EnterExitState.PostExit
+                ) ContentScale.Fit else ContentScale.Crop,
                 aoCor = if (f.isImage || f.isVideo) {
                     { c ->
                         if (c != Color.Unspecified) {
