@@ -574,7 +574,7 @@ internal fun ItemGrade(
             ),
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f).then(origemMiniatura)) {
-            val escalaTransicao = if (f.isImage) escalaMiniaturaNaTransicao(avExterno) else ContentScale.Crop
+            val escalaTransicao = if (f.isImage || f.isVideo) escalaMiniaturaNaTransicao(avExterno) else ContentScale.Crop
             Miniatura(
                 f, token, estado, 44.dp, Modifier.fillMaxSize(),
                 escalaConteudo = escalaTransicao,
@@ -637,7 +637,7 @@ internal fun ItemLinha(
             f, token, estado, 28.dp,
             Modifier.size(56.dp).then(origem).clip(RoundedCornerShape(10.dp)),
             fundo = MaterialTheme.colorScheme.surfaceVariant,
-            escalaConteudo = if (f.isImage) escalaMiniaturaNaTransicao(avExterno) else ContentScale.Crop,
+            escalaConteudo = if (f.isImage || f.isVideo) escalaMiniaturaNaTransicao(avExterno) else ContentScale.Crop,
         )
         Column(Modifier.weight(1f).padding(start = 12.dp)) {
             NomeUmaLinha(f.name, Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyLarge)
