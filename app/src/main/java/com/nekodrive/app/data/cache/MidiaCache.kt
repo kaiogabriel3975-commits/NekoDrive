@@ -35,6 +35,11 @@ import kotlin.coroutines.coroutineContext
 
 private const val GB = 1024L * 1024L * 1024L
 
+/** Uma versão convertida do vídeo: [itag] do Drive, [altura] em pixels e o endereço do fluxo. */
+class FormatoConvertido(val itag: String, val altura: Int, val url: String)
+
+private val ALTURA_PADRAO = mapOf("37" to 1080, "22" to 720, "59" to 480, "35" to 480, "18" to 360, "34" to 360)
+
 /** O token do Drive só é enviado para estes endereços do Google. */
 private val HOSTS_COM_TOKEN = setOf("www.googleapis.com", "drive.google.com", "docs.google.com")
 
@@ -140,10 +145,10 @@ class MidiaCache(context: Context, private val auth: AuthManager, limiteGb: Int)
     fun urlOriginal(id: String): String = url(id)
 
     /**
-     * Endereço da versão convertida (mp4) que o Drive gera para streaming. Usa um endereço NÃO oficial do Drive,
-     * que pode mudar ou deixar de funcionar.
+     * Versões convertidas (mp4) que o Drive gera para streaming, da maior para a menor altura.
+     * Usa um endereço NÃO oficial do Drive, que pode mudar ou deixar de funcionar.
      */
-    suspend fun urlConvertida(email: String, id: String): String = withContext(Dispatchers.IO) {
+    suspend fun formatosConvertidos(email: String, id: String): List<FormatoConvertido> = withContext(Dispatchers.IO) {
         conta.set(email)
         val endereco = "https://drive.google.com/get_video_info".toHttpUrl().newBuilder()
             .addQueryParameter("docid", id)
@@ -158,17 +163,26 @@ class MidiaCache(context: Context, private val auth: AuthManager, limiteGb: Int)
         if (campos["status"] != "ok") {
             throw IOException(campos["reason"] ?: "O Drive não ofereceu uma versão convertida deste vídeo")
         }
-        val mapa = (campos["fmt_stream_map"] ?: throw IOException("O Drive não devolveu os formatos convertidos"))
+        val alturas = (campos["fmt_list"] ?: "").split(',').mapNotNull { entrada ->
+            val partes = entrada.split('/')
+            val altura = partes.getOrNull(1)?.split('x')?.getOrNull(1)?.toIntOrNull()
+            if (altura != null) partes[0] to altura else null
+        }.toMap()
+        val urls = (campos["fmt_stream_map"] ?: throw IOException("O Drive não devolveu os formatos convertidos"))
             .split(',')
             .mapNotNull { entrada ->
                 val i = entrada.indexOf('|')
                 if (i < 0) null else entrada.substring(0, i) to entrada.substring(i + 1).replace("\\u0026", "&")
             }.toMap()
-        for (itag in listOf("37", "22", "59", "18")) mapa[itag]?.let { return@withContext it }
-        mapa.values.firstOrNull() ?: throw IOException("Nenhum formato convertido disponível")
+        val formatos = urls.mapNotNull { (itag, url) ->
+            val altura = alturas[itag] ?: ALTURA_PADRAO[itag] ?: return@mapNotNull null
+            FormatoConvertido(itag, altura, url)
+        }.sortedByDescending { it.altura }
+        if (formatos.isEmpty()) throw IOException("Nenhum formato convertido disponível")
+        formatos
     }
 
-    fun chave(email: String, id: String) = "$email|$id"
+    suspend fun urlConvertida(email: String, id: String): String = formatosConvertidos(email, id).first().url
 
     private fun url(id: String) = "https://www.googleapis.com/drive/v3/files/$id?alt=media"
 
