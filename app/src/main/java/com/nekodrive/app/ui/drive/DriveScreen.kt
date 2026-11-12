@@ -376,7 +376,7 @@ private fun PaginaPasta(
                                     placementSpec = spring(
                                         dampingRatio = 0.85f,
                                         stiffness = 380f,
-                                        visibilityThreshold = IntOffset.VisibilityThreshold,
+                                        visibilityThreshold = IntOffset(1, 1),
                                     ),
                                 ),
                             ) {
