@@ -3,6 +3,7 @@ package com.nekodrive.app.ui
 import android.accounts.AccountManager
 import android.app.Activity
 import android.content.res.Configuration
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -22,6 +23,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -181,6 +183,13 @@ fun NekoDriveApp() {
         vm.limparSelecao()
     }
 
+    LaunchedEffect(vm.aviso) {
+        vm.aviso?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+            vm.limparAviso()
+        }
+    }
+
     val ultimo = remember { mutableStateOf<FotosAbertas?>(null) }
     if (vm.visualizador != null) SideEffect { ultimo.value = vm.visualizador }
 
@@ -196,16 +205,22 @@ fun NekoDriveApp() {
         LocalVidro provides vidroCtx,
         LocalMarqueePausado provides (vm.visualizador != null || congelarNomes),
     ) {
+        Surface(
+            Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background,
+            contentColor = MaterialTheme.colorScheme.onBackground,
+        ) {
         SharedTransitionLayout {
             val st = this
             AnimatedContent(
                 targetState = vm.visualizador != null,
                 // A galeria só se dissolve por cima: a tela de trás não se move nem esmaece
                 transitionSpec = {
+                    // Sem fade: a miniatura expande opaca e a galeria fecha sobre a tela de trás, que não se move
                     if (targetState) {
-                        (fadeIn(tween(300)) togetherWith ExitTransition.None).apply { targetContentZIndex = 1f }
+                        (EnterTransition.None togetherWith ExitTransition.None).apply { targetContentZIndex = 1f }
                     } else {
-                        (EnterTransition.None togetherWith fadeOut(tween(300))).apply { targetContentZIndex = -1f }
+                        (EnterTransition.None togetherWith ExitTransition.None).apply { targetContentZIndex = -1f }
                     }
                 },
                 label = "galeria",
@@ -228,6 +243,7 @@ fun NekoDriveApp() {
                     )
                 }
             }
+        }
         }
     }
 
@@ -263,7 +279,10 @@ private fun Principal(
     val tela: @Composable (PaddingValues) -> Unit = { padding ->
         when (atual) {
             Destino.Drive -> DriveScreen(vm, onEntrar = entrar, st = st, avExterno = av, contentPadding = padding)
-            Destino.Favoritos -> FavoritosScreen(vm, st, av, padding)
+            Destino.Favoritos -> FavoritosScreen(vm, st, av, padding) { pasta ->
+                aoSelecionar(Destino.Drive)
+                vm.abrirPastaDireto(pasta)
+            }
             Destino.Lixeira -> LixeiraScreen(vm, st, av, padding)
         }
     }
@@ -308,7 +327,7 @@ private fun PrincipalRetrato(
     }
 }
 
-/** Paisagem: NavigationRail e cartão flutuante com as informações do cabeçalho à esquerda; o resto é conteúdo. */
+/** Paisagem: cabeçalho e NavigationRail formam uma só peça flutuante à esquerda; o resto da tela é conteúdo. */
 @Composable
 private fun PrincipalPaisagem(
     atual: Destino,
@@ -319,38 +338,67 @@ private fun PrincipalPaisagem(
 ) {
     val insets = WindowInsets.systemBars.asPaddingValues()
     Row(Modifier.fillMaxSize()) {
-        Column(
+        Box(
             Modifier.fillMaxHeight()
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Start + WindowInsetsSides.Vertical))
                 .padding(start = 12.dp, top = 8.dp, bottom = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            CartaoCabecalho(abrirContas, abrirConfig)
-            Surface(
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(28.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                shadowElevation = 4.dp,
-            ) {
-                NavigationRail(containerColor = Color.Transparent, windowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp)) {
-                    Spacer(Modifier.weight(1f))
-                    Destino.entries.forEach { d ->
-                        NavigationRailItem(
-                            selected = atual == d,
-                            onClick = { aoSelecionar(d) },
-                            icon = { Icon(if (atual == d) d.iconeSelecionado else d.icone, contentDescription = d.rotulo) },
-                            label = { Text(d.rotulo) },
-                        )
-                    }
-                    Spacer(Modifier.weight(1f))
-                }
-            }
+            LateralPaisagem(atual, aoSelecionar, abrirContas, abrirConfig)
         }
         Box(
             Modifier.weight(1f).fillMaxHeight()
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.End)),
         ) {
             tela(PaddingValues(top = insets.calculateTopPadding(), bottom = insets.calculateBottomPadding()))
+        }
+    }
+}
+
+@Composable
+private fun LateralPaisagem(
+    atual: Destino,
+    aoSelecionar: (Destino) -> Unit,
+    abrirContas: () -> Unit,
+    abrirConfig: () -> Unit,
+) {
+    Surface(
+        Modifier.fillMaxHeight(),
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shadowElevation = 4.dp,
+    ) {
+        Column(
+            Modifier.width(92.dp).fillMaxHeight().padding(top = 14.dp, bottom = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            PawIcon()
+            Spacer(Modifier.height(4.dp))
+            Text("nekodrive", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+            Row(Modifier.padding(top = 4.dp)) {
+                IconButton(onClick = abrirContas, modifier = Modifier.size(40.dp)) {
+                    Icon(Icons.Rounded.AccountCircle, contentDescription = "Contas")
+                }
+                IconButton(onClick = abrirConfig, modifier = Modifier.size(40.dp)) {
+                    Icon(Icons.Rounded.Settings, contentDescription = "Configurações")
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            NavigationRail(
+                containerColor = Color.Transparent,
+                windowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
+                modifier = Modifier.weight(1f),
+            ) {
+                Spacer(Modifier.weight(1f))
+                Destino.entries.forEach { d ->
+                    NavigationRailItem(
+                        selected = atual == d,
+                        onClick = { aoSelecionar(d) },
+                        icon = { Icon(if (atual == d) d.iconeSelecionado else d.icone, contentDescription = d.rotulo) },
+                        label = { Text(d.rotulo) },
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+            }
         }
     }
 }
@@ -381,33 +429,6 @@ private fun Cabecalho(abrirContas: () -> Unit, abrirConfig: () -> Unit) {
     )
 }
 
-/** Cabeçalho da paisagem: cartão flutuante ligado visualmente à NavigationRail, com separação entre os dois. */
-@Composable
-private fun CartaoCabecalho(abrirContas: () -> Unit, abrirConfig: () -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shadowElevation = 4.dp,
-    ) {
-        Column(
-            Modifier.width(104.dp).padding(vertical = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            PawIcon()
-            Text("nekodrive", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-            Row {
-                IconButton(onClick = abrirContas, modifier = Modifier.size(40.dp)) {
-                    Icon(Icons.Rounded.AccountCircle, contentDescription = "Contas")
-                }
-                IconButton(onClick = abrirConfig, modifier = Modifier.size(40.dp)) {
-                    Icon(Icons.Rounded.Settings, contentDescription = "Configurações")
-                }
-            }
-        }
-    }
-}
-
 /**
  * Toolbar flutuante horizontal (no estilo da HorizontalFloatingToolbar do Material 3 Expressive):
  * pílula flutuante com vidro, destino selecionado expandido e recolhimento ao rolar a lista para baixo.
@@ -428,7 +449,9 @@ private fun BarraFlutuante(
     ) {
         val forma = RoundedCornerShape(50)
         Row(
-            Modifier.shadow(10.dp, forma).clip(forma).vidro().padding(horizontal = 8.dp, vertical = 6.dp),
+            Modifier.clip(forma).vidro()
+                .border(0.6.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f), forma)
+                .padding(horizontal = 8.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

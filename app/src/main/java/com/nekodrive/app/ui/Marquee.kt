@@ -1,5 +1,7 @@
 package com.nekodrive.app.ui
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material3.LocalTextStyle
@@ -47,6 +49,9 @@ fun NomeUmaLinha(
     var deslocamento by remember(texto) { mutableFloatStateOf(0f) }
 
     val excede = larguraCaixa > 0 && larguraTexto > larguraCaixa
+    // O texto surge com um fade rápido (por exemplo, ao trocar entre grade e lista)
+    val opacidade = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { opacidade.animateTo(1f, tween(140)) }
     val intervalo = with(densidade) { 32.dp.toPx() }
     val ciclo = larguraTexto + intervalo
 
@@ -62,7 +67,7 @@ fun NomeUmaLinha(
     }
 
     Box(
-        modifier.clipToBounds().onSizeChanged { larguraCaixa = it.width },
+        modifier.clipToBounds().graphicsLayer { alpha = opacidade.value }.onSizeChanged { larguraCaixa = it.width },
         contentAlignment = if (centralizar) Alignment.Center else Alignment.CenterStart,
     ) {
         Text(
