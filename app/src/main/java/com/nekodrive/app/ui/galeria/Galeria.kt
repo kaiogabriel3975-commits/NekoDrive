@@ -140,7 +140,9 @@ import com.nekodrive.app.ui.compartilharArquivo
 import com.nekodrive.app.ui.drive.DriveViewModel
 import com.nekodrive.app.ui.drive.FotosAbertas
 import com.nekodrive.app.ui.drive.emLoop
-import com.nekodrive.app.ui.drive.pastaBounds
+import com.nekodrive.app.ui.drive.ProporcoesMidia
+import com.nekodrive.app.ui.drive.TempoGaleria
+import com.nekodrive.app.ui.drive.midiaBounds
 import com.nekodrive.app.ui.fonteVidro
 import com.nekodrive.app.ui.player.CastControle
 import dev.chrisbanes.haze.HazeState
@@ -174,9 +176,10 @@ private fun tempo(ms: Long): String {
 /**
  * Efeito de fechamento integrado: a mídia encolhe de leve em direção ao centro e o topo inclina para trás em
  * perspectiva (base como referência). [progresso] vai de 0 a 1; a inclinação cresce com o quadrado dele,
- * então começa devagar e ganha velocidade (aceleração). Usado tanto no gesto quanto nos botões de voltar.
+ * então começa devagar e ganha velocidade (aceleração). [inclinar] (0 a 1 a 0) é a inclinação que acompanha a
+ * animação de fechar até a miniatura. Usado tanto no gesto quanto nos botões de voltar.
  */
-private fun Modifier.efeitoFechar(progresso: () -> Float): Modifier = this
+private fun Modifier.efeitoFechar(progresso: () -> Float, inclinar: () -> Float): Modifier = this
     .graphicsLayer {
         val q = progresso()
         val suave = q * q * (3f - 2f * q)
@@ -187,7 +190,8 @@ private fun Modifier.efeitoFechar(progresso: () -> Float): Modifier = this
     }
     .graphicsLayer {
         val q = progresso()
-        rotationX = 9f * q * q
+        // gesto de arrastar (q) + inclinação que acompanha a volta à miniatura: sobe, passa do meio e assenta (inclinar)
+        rotationX = 9f * q * q + 14f * inclinar()
         transformOrigin = TransformOrigin(0.5f, 1f)
         cameraDistance = 14f * density
     }
@@ -223,6 +227,7 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
     // progresso: 0 = galeria aberta, 1 = fechada. aparecer: opacidade do fundo preto (a mídia nunca fica transparente)
     val progresso = remember { Animatable(0f) }
     val aparecer = remember { Animatable(0f) }
+    val inclinar = remember { Animatable(0f) }
     var abriu by remember { mutableStateOf(false) }
     var fechando by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
@@ -230,14 +235,21 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
         delay(240)
         abriu = true
     }
+    DisposableEffect(Unit) { onDispose { TempoGaleria.fechando = false } }
 
     /** Fecha por qualquer caminho (gesto, voltar, botão) com a mesma animação integrada. */
     fun fechar() {
         if (fechando) return
         fechando = true
+        TempoGaleria.fechando = true
         vm.fecharFoto()
-        scope.launch { aparecer.animateTo(0f, tween(450)) }
-        scope.launch { progresso.animateTo(1f, spring(dampingRatio = 1f, stiffness = 110f)) }
+        // 700 ms no total (a abertura leva 500): o fundo some, o arrasto se desfaz e a inclinação sobe e assenta
+        scope.launch { aparecer.animateTo(0f, tween(650)) }
+        scope.launch { progresso.animateTo(0f, tween(300, easing = CurvaIOS)) }
+        scope.launch {
+            inclinar.animateTo(1f, tween(300, easing = FastOutSlowInEasing))
+            inclinar.animateTo(0f, tween(400, easing = CurvaIOS))
+        }
     }
 
     // Vidro com blur da galeria: o pager é a fonte; botões e pílulas desfocam o que passa por baixo
@@ -407,6 +419,7 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                                     token = vm.token,
                                     compartilhar = i == ativa,
                                     progresso = { progresso.value },
+                                    inclinar = { inclinar.value },
                                     st = st,
                                     av = av,
                                     aoZoom = { zoomado = it },
@@ -422,6 +435,7 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                                     ehAtual = i == ativa,
                                     compartilhar = i == ativa,
                                     progresso = { progresso.value },
+                                    inclinar = { inclinar.value },
                                     st = st,
                                     av = av,
                                     aoZoom = { zoomado = it },
@@ -680,6 +694,7 @@ private fun PaginaFoto(
     ehAtual: Boolean,
     compartilhar: Boolean,
     progresso: () -> Float,
+    inclinar: () -> Float,
     st: SharedTransitionScope,
     av: AnimatedVisibilityScope,
     aoZoom: (Boolean) -> Unit,
@@ -695,14 +710,26 @@ private fun PaginaFoto(
     var giroAnterior by remember { mutableIntStateOf(giro) }
 
     // Cantos arredondados da miniatura viram cantos retos aos poucos (e o contrário ao fechar)
-    val raio by av.transition.animateDp(transitionSpec = { tween(500, easing = CurvaIOS) }, label = "raio") {
+    val raio by av.transition.animateDp(
+        transitionSpec = { tween(if (targetState == EnterExitState.Visible) 500 else 700, easing = CurvaIOS) },
+        label = "raio",
+    ) {
         if (it == EnterExitState.Visible) 0.dp else 14.dp
     }
-    val origem = if (compartilhar) Modifier.pastaBounds("foto-${f.id}", st, av) else Modifier
+    val origem = if (compartilhar) Modifier.midiaBounds("foto-${f.id}", st, av, miniatura = false) else Modifier
+    // formato real da mídia: a miniatura já carregada na lista (ou a imagem original, se ainda não houver)
+    val razao = ProporcoesMidia.obter(f.id) ?: proporcao
 
-    BoxWithConstraints(Modifier.fillMaxSize().then(origem)) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
+        // caixa com a proporção da mídia, centralizada: é ela que cresce da miniatura (recorte quadrado) até o formato original
+        val caixa = if (razao != null && razao > 0f) {
+            val largo = maxWidth / maxHeight > razao
+            Modifier.size(if (largo) maxHeight * razao else maxWidth, if (largo) maxHeight else maxWidth / razao)
+        } else {
+            Modifier.fillMaxSize()
+        }
 
         // Escala exata para a foto girada caber sem bordas desnecessárias (usa a proporção real da imagem)
         val alvoAjuste = if (giro % 2 != 0) {
@@ -743,11 +770,7 @@ private fun PaginaFoto(
             }
         }
 
-        Box(
-            Modifier.fillMaxSize()
-                .clip(if (compartilhar) RoundedCornerShape(raio) else RectangleShape)
-                .efeitoFechar(progresso),
-        ) {
+        Box(Modifier.fillMaxSize()) {
             Box(
                 Modifier.fillMaxSize()
                     .pointerInput(Unit) {
@@ -792,7 +815,13 @@ private fun PaginaFoto(
                         translationY = deslocamento.y
                         rotationZ = rotacao.value
                     },
+                contentAlignment = Alignment.Center,
             ) {
+                Box(
+                    caixa.then(origem)
+                        .clip(if (compartilhar) RoundedCornerShape(raio) else RectangleShape)
+                        .efeitoFechar(progresso, inclinar),
+                ) {
                 val original = ImageRequest.Builder(ctx)
                     .data(arquivoLocal ?: "https://www.googleapis.com/drive/v3/files/${f.id}?alt=media")
                     .apply { if (token != null) addHeader("Authorization", "Bearer $token") }
@@ -804,7 +833,7 @@ private fun PaginaFoto(
                     model = original,
                     contentDescription = f.name,
                     modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Fit,
+                    contentScale = if (razao != null) ContentScale.Crop else ContentScale.Fit,
                     onSuccess = { s ->
                         val tam = s.painter.intrinsicSize
                         if (tam.isSpecified && tam.width > 0f && tam.height > 0f) proporcao = tam.width / tam.height
@@ -816,12 +845,16 @@ private fun PaginaFoto(
                                     .data(f.thumbnailLink)
                                     .apply { if (token != null) addHeader("Authorization", "Bearer $token") }
                                     .build()
-                                AsyncImage(miniatura, null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                                AsyncImage(
+                                    miniatura, null, Modifier.fillMaxSize(),
+                                    contentScale = if (razao != null) ContentScale.Crop else ContentScale.Fit,
+                                )
                             }
                             CircularProgressIndicator(Modifier.size(32.dp), color = Color.White)
                         }
                     },
                 )
+                }
             }
         }
     }
@@ -836,6 +869,7 @@ private fun PaginaVideo(
     token: String?,
     compartilhar: Boolean,
     progresso: () -> Float,
+    inclinar: () -> Float,
     st: SharedTransitionScope,
     av: AnimatedVisibilityScope,
     aoZoom: (Boolean) -> Unit,
@@ -846,14 +880,24 @@ private fun PaginaVideo(
     var escala by remember { mutableFloatStateOf(1f) }
     var deslocamento by remember { mutableStateOf(Offset.Zero) }
 
-    val raio by av.transition.animateDp(transitionSpec = { tween(500, easing = CurvaIOS) }, label = "raio") {
+    val raio by av.transition.animateDp(
+        transitionSpec = { tween(if (targetState == EnterExitState.Visible) 500 else 700, easing = CurvaIOS) },
+        label = "raio",
+    ) {
         if (it == EnterExitState.Visible) 0.dp else 14.dp
     }
-    val origem = if (compartilhar) Modifier.pastaBounds("video-${f.id}", st, av) else Modifier
+    val origem = if (compartilhar) Modifier.midiaBounds("video-${f.id}", st, av, miniatura = false) else Modifier
+    val razao = ProporcoesMidia.obter(f.id) ?: ctrl?.takeIf { it.pronto }?.proporcao
 
-    BoxWithConstraints(Modifier.fillMaxSize().then(origem)) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
+        val caixa = if (razao != null && razao > 0f) {
+            val largo = maxWidth / maxHeight > razao
+            Modifier.size(if (largo) maxHeight * razao else maxWidth, if (largo) maxHeight else maxWidth / razao)
+        } else {
+            Modifier.fillMaxSize()
+        }
 
         fun alternarZoom() {
             escopo.launch {
@@ -925,11 +969,7 @@ private fun PaginaVideo(
                     )
                 }
         }
-        Box(
-            Modifier.fillMaxSize()
-                .clip(if (compartilhar) RoundedCornerShape(raio) else RectangleShape)
-                .efeitoFechar(progresso),
-        ) {
+        Box(Modifier.fillMaxSize()) {
             Box(
                 Modifier.fillMaxSize().then(gestos).graphicsLayer {
                     scaleX = escala
@@ -939,12 +979,21 @@ private fun PaginaVideo(
                 },
                 contentAlignment = Alignment.Center,
             ) {
+              Box(
+                caixa.then(origem)
+                    .clip(if (compartilhar) RoundedCornerShape(raio) else RectangleShape)
+                    .efeitoFechar(progresso, inclinar),
+                contentAlignment = Alignment.Center,
+              ) {
                 if (f.thumbnailLink != null) {
                     val miniatura = ImageRequest.Builder(ctx)
                         .data(f.thumbnailLink)
                         .apply { if (token != null) addHeader("Authorization", "Bearer $token") }
                         .build()
-                    AsyncImage(miniatura, null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                    AsyncImage(
+                        miniatura, null, Modifier.fillMaxSize(),
+                        contentScale = if (razao != null) ContentScale.Crop else ContentScale.Fit,
+                    )
                 }
                 if (ctrl != null) {
                     key(ctrl) {
@@ -954,6 +1003,7 @@ private fun PaginaVideo(
                         )
                     }
                 }
+              }
             }
         }
     }
