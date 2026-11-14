@@ -1,7 +1,7 @@
 # nekodrive
 
 App Android (Kotlin + Jetpack Compose) para ver vídeos e fotos do Google Drive.
-Etapa 1: projeto base (tema Material You, cabeçalho, barra inferior, ícones e build no GitHub).
+Visualizador e player de fotos e vídeos do Google Drive, organizado por pastas. O histórico de cada etapa está nas seções abaixo (as seções antigas descrevem o estado daquela etapa).
 
 ## Compilar pelo GitHub Actions
 
@@ -27,11 +27,10 @@ SHA-1 para o cliente OAuth do Google Cloud (etapa 2):
 
 Nunca envie o `.jks` ao repositório (já está no `.gitignore`).
 
-## Estado atual
+## Estado da etapa 1 (histórico)
 
 - minSdk 31 (Android 12), pacote `com.nekodrive.app`
-- Barras translúcidas; o blur real (Haze) entra no polimento
-- Botões de conta e configurações ainda sem ação
+- Conta e configurações já têm ação (etapas 2 e 6) e o blur real (Haze) entrou na etapa 9
 
 ## Etapa 2: login e listagem do Drive
 
@@ -50,7 +49,7 @@ Para o login funcionar, configure o Google Cloud (uma vez):
 Estado atual da etapa 2:
 - Várias contas: botão de contas no cabeçalho (trocar, adicionar, remover)
 - Pastas e arquivos do Meu Drive em grade com miniaturas, navegação por pastas e botão voltar
-- Tocar em foto ou vídeo ainda não faz nada (etapas 4 e 5)
+- Foto e vídeo abrem no visualizador e no player (etapas 4 e 5)
 - Sem Hilt: usei injeção manual simples (AppContainer)
 
 ## Gerar a keystore pelo GitHub (sem PC)
@@ -172,3 +171,12 @@ O workflow se recusa a rodar se `KEYSTORE_BASE64` já existir, para você não t
 - Favoritar pastas (abrem no Drive pelo Favoritos); compartilhar; abrir em outro player (streaming local) ou outro app
 - Arquivos que não são mídia baixam para a pasta Downloads do Android
 - Player: resolução original e versões convertidas disponíveis; padrão 1080p no Wi-Fi e 540p (ou a mais próxima abaixo) em dados, com ajuste automático pela rede enquanto você não escolher
+
+## Terceira rodada (após o teste da segunda)
+
+- A segunda rodada compilou e foi testada no aparelho (Samsung, navegação por botões): a faixa preta da navegação não aparece mais
+- Menu de ordenação com blur (mesmo componente dos menus do player), no lugar do menu opaco do sistema
+- Cor dominante também na lista (linha em cartão arredondado) e nos GIFs (cor do primeiro quadro)
+- Card da pasta: o ícone e a legenda acompanham a borda do card enquanto ele se expande e voltam com ela ao fechar; o conteúdo da pasta entra um pouco depois
+- Grade e lista: o texto some rápido, os itens deslizam e mudam de tamanho com mola, e o texto volta
+- Puxar para baixo no topo atualiza (confirmado)
