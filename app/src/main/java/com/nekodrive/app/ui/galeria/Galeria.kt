@@ -140,7 +140,7 @@ import com.nekodrive.app.ui.compartilharArquivo
 import com.nekodrive.app.ui.drive.DriveViewModel
 import com.nekodrive.app.ui.drive.FotosAbertas
 import com.nekodrive.app.ui.drive.emLoop
-import com.nekodrive.app.ui.drive.transicaoMidia
+import com.nekodrive.app.ui.drive.pastaBounds
 import com.nekodrive.app.ui.fonteVidro
 import com.nekodrive.app.ui.player.CastControle
 import dev.chrisbanes.haze.HazeState
@@ -170,6 +170,27 @@ private fun tempo(ms: Long): String {
     val ss = s % 60
     return if (h > 0) "%d:%02d:%02d".format(h, m, ss) else "%02d:%02d".format(m, ss)
 }
+
+/**
+ * Efeito de fechamento integrado: a mídia encolhe de leve em direção ao centro e o topo inclina para trás em
+ * perspectiva (base como referência). [progresso] vai de 0 a 1; a inclinação cresce com o quadrado dele,
+ * então começa devagar e ganha velocidade (aceleração). Usado tanto no gesto quanto nos botões de voltar.
+ */
+private fun Modifier.efeitoFechar(progresso: () -> Float): Modifier = this
+    .graphicsLayer {
+        val q = progresso()
+        val suave = q * q * (3f - 2f * q)
+        val s = 1f - 0.07f * suave
+        scaleX = s
+        scaleY = s
+        translationY = q * size.height * 0.10f
+    }
+    .graphicsLayer {
+        val q = progresso()
+        rotationX = 9f * q * q
+        transformOrigin = TransformOrigin(0.5f, 1f)
+        cameraDistance = 14f * density
+    }
 
 /**
  * Galeria em tela cheia: fotos e vídeos da pasta na mesma sequência, com deslize horizontal.
@@ -214,9 +235,9 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
     fun fechar() {
         if (fechando) return
         fechando = true
-        // A transição do próprio elemento compartilhado conduz o retorno.
         vm.fecharFoto()
-        scope.launch { aparecer.animateTo(0f, tween(500, easing = CurvaIOS)) }
+        scope.launch { aparecer.animateTo(0f, tween(450)) }
+        scope.launch { progresso.animateTo(1f, spring(dampingRatio = 1f, stiffness = 110f)) }
     }
 
     // Vidro com blur da galeria: o pager é a fonte; botões e pílulas desfocam o que passa por baixo
@@ -385,6 +406,7 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                                     ctrl = if (i == ativa) ctrl else null,
                                     token = vm.token,
                                     compartilhar = i == ativa,
+                                    progresso = { progresso.value },
                                     st = st,
                                     av = av,
                                     aoZoom = { zoomado = it },
@@ -399,6 +421,7 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                                     giro = giros[f.id] ?: 0,
                                     ehAtual = i == ativa,
                                     compartilhar = i == ativa,
+                                    progresso = { progresso.value },
                                     st = st,
                                     av = av,
                                     aoZoom = { zoomado = it },
@@ -656,6 +679,7 @@ private fun PaginaFoto(
     giro: Int,
     ehAtual: Boolean,
     compartilhar: Boolean,
+    progresso: () -> Float,
     st: SharedTransitionScope,
     av: AnimatedVisibilityScope,
     aoZoom: (Boolean) -> Unit,
@@ -674,7 +698,7 @@ private fun PaginaFoto(
     val raio by av.transition.animateDp(transitionSpec = { tween(500, easing = CurvaIOS) }, label = "raio") {
         if (it == EnterExitState.Visible) 0.dp else 14.dp
     }
-    val origem = if (compartilhar) Modifier.transicaoMidia("foto-${f.id}", st, av) else Modifier
+    val origem = if (compartilhar) Modifier.pastaBounds("foto-${f.id}", st, av) else Modifier
 
     BoxWithConstraints(Modifier.fillMaxSize().then(origem)) {
         val w = constraints.maxWidth.toFloat()
@@ -721,7 +745,8 @@ private fun PaginaFoto(
 
         Box(
             Modifier.fillMaxSize()
-                .clip(if (compartilhar) RoundedCornerShape(raio) else RectangleShape),
+                .clip(if (compartilhar) RoundedCornerShape(raio) else RectangleShape)
+                .efeitoFechar(progresso),
         ) {
             Box(
                 Modifier.fillMaxSize()
@@ -810,6 +835,7 @@ private fun PaginaVideo(
     ctrl: ControleVideo?,
     token: String?,
     compartilhar: Boolean,
+    progresso: () -> Float,
     st: SharedTransitionScope,
     av: AnimatedVisibilityScope,
     aoZoom: (Boolean) -> Unit,
@@ -823,7 +849,7 @@ private fun PaginaVideo(
     val raio by av.transition.animateDp(transitionSpec = { tween(500, easing = CurvaIOS) }, label = "raio") {
         if (it == EnterExitState.Visible) 0.dp else 14.dp
     }
-    val origem = if (compartilhar) Modifier.transicaoMidia("video-${f.id}", st, av) else Modifier
+    val origem = if (compartilhar) Modifier.pastaBounds("video-${f.id}", st, av) else Modifier
 
     BoxWithConstraints(Modifier.fillMaxSize().then(origem)) {
         val w = constraints.maxWidth.toFloat()
@@ -901,7 +927,8 @@ private fun PaginaVideo(
         }
         Box(
             Modifier.fillMaxSize()
-                .clip(if (compartilhar) RoundedCornerShape(raio) else RectangleShape),
+                .clip(if (compartilhar) RoundedCornerShape(raio) else RectangleShape)
+                .efeitoFechar(progresso),
         ) {
             Box(
                 Modifier.fillMaxSize().then(gestos).graphicsLayer {
