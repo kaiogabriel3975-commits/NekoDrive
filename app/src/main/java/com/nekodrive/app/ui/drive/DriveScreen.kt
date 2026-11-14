@@ -90,11 +90,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.ScaleFactor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
@@ -129,41 +127,22 @@ private val CurvaSuave = BoundsTransform { _, _ -> tween(durationMillis = 500, e
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-internal fun Modifier.transicaoPasta(
+internal fun Modifier.pastaBounds(
     chave: String,
     st: SharedTransitionScope,
     av: AnimatedVisibilityScope,
     desvanecerOrigem: Boolean = false,
 ): Modifier =
     with(st) {
-        this@transicaoPasta.sharedBounds(
+        this@pastaBounds.sharedBounds(
             rememberSharedContentState(key = chave),
             animatedVisibilityScope = av,
             enter = EnterTransition.None,
             exit = if (desvanecerOrigem) fadeOut(tween(140)) else ExitTransition.None,
             boundsTransform = CurvaSuave,
-            resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds(),
+            resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
         )
     }
-
-/**
- * Um único elemento visual é promovido ao overlay durante a transição.
- * Diferente de sharedBounds, sharedElement mantém apenas o conteúdo de destino
- * renderizado na caixa em movimento, evitando duas mídias concorrendo pelo motion.
- */
-@OptIn(ExperimentalSharedTransitionApi::class)
-@Composable
-internal fun Modifier.transicaoMidia(
-    chave: String,
-    st: SharedTransitionScope,
-    av: AnimatedVisibilityScope,
-): Modifier = with(st) {
-    this@transicaoMidia.sharedElement(
-        state = rememberSharedContentState(key = chave),
-        animatedVisibilityScope = av,
-        boundsTransform = CurvaSuave,
-    )
-}
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -368,7 +347,7 @@ private fun PaginaPasta(
     val rebote = rememberRebote(carregando = vm.carregando && atual, aoAtualizar = { vm.atualizar() })
 
     Surface(
-        Modifier.transicaoPasta("pasta-$chave", st, av).fonteVidro().fillMaxSize(),
+        Modifier.pastaBounds("pasta-$chave", st, av).fonteVidro().fillMaxSize(),
         shape = RoundedCornerShape(raio),
         color = fundo,
     ) {
@@ -460,7 +439,6 @@ private fun Miniatura(
     modifier: Modifier = Modifier,
     fundo: Color = Color.Transparent,
     aoCor: ((Color) -> Unit)? = null,
-    escalaConteudo: ContentScale = ContentScale.Crop,
 ) {
     val context = LocalContext.current
     val ehGif = f.mimeType == "image/gif"
@@ -475,7 +453,7 @@ private fun Miniatura(
                 .crossfade(true)
                 .build()
             AsyncImage(
-                request, f.name, Modifier.fillMaxSize(), contentScale = escalaConteudo,
+                request, f.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
                 onSuccess = { s ->
                     if (aoCor != null) {
                         (s.result.drawable as? BitmapDrawable)?.bitmap?.let { b -> aoCor(corDominante(b)) }
@@ -555,10 +533,10 @@ internal fun ItemGrade(
     val corTexto by animateColorAsState(alvoTexto, tween(700), label = "corTexto")
 
     val forma = RoundedCornerShape(14.dp)
-    val origemCard = if (f.isFolder) Modifier.transicaoPasta("pasta-${f.id}", st, av, desvanecerOrigem = true) else Modifier
+    val origemCard = if (f.isFolder) Modifier.pastaBounds("pasta-${f.id}", st, av, desvanecerOrigem = true) else Modifier
     val origemMiniatura = when {
-        f.isImage -> Modifier.transicaoMidia("foto-${f.id}", st, avExterno)
-        f.isVideo -> Modifier.transicaoMidia("video-${f.id}", st, avExterno)
+        f.isImage -> Modifier.pastaBounds("foto-${f.id}", st, avExterno)
+        f.isVideo -> Modifier.pastaBounds("video-${f.id}", st, avExterno)
         else -> Modifier
     }
     Column(
@@ -572,10 +550,8 @@ internal fun ItemGrade(
             ),
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f).then(origemMiniatura)) {
-            val escalaTransicao = ContentScale.Crop
             Miniatura(
                 f, token, estado, 44.dp, Modifier.fillMaxSize(),
-                escalaConteudo = escalaTransicao,
                 aoCor = if (f.isImage || f.isVideo) {
                     { c ->
                         if (c != Color.Unspecified) {
@@ -615,9 +591,9 @@ internal fun ItemLinha(
 ) {
     val haptico = LocalHapticFeedback.current
     val origem = when {
-        f.isFolder -> Modifier.transicaoPasta("pasta-${f.id}", st, av, desvanecerOrigem = true)
-        f.isImage -> Modifier.transicaoMidia("foto-${f.id}", st, avExterno)
-        f.isVideo -> Modifier.transicaoMidia("video-${f.id}", st, avExterno)
+        f.isFolder -> Modifier.pastaBounds("pasta-${f.id}", st, av, desvanecerOrigem = true)
+        f.isImage -> Modifier.pastaBounds("foto-${f.id}", st, avExterno)
+        f.isVideo -> Modifier.pastaBounds("video-${f.id}", st, avExterno)
         else -> Modifier
     }
     val fundo = if (selecionado) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
@@ -635,7 +611,6 @@ internal fun ItemLinha(
             f, token, estado, 28.dp,
             Modifier.size(56.dp).then(origem).clip(RoundedCornerShape(10.dp)),
             fundo = MaterialTheme.colorScheme.surfaceVariant,
-            escalaConteudo = ContentScale.Crop,
         )
         Column(Modifier.weight(1f).padding(start = 12.dp)) {
             NomeUmaLinha(f.name, Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyLarge)
