@@ -10,7 +10,6 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.animateColor
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
@@ -373,15 +372,22 @@ private fun PaginaPasta(
 
     // A tela da pasta nasce com o formato e a cor do card e vai virando tela cheia (e o contrário ao fechar)
     val tema = MaterialTheme.colorScheme
+    // Só a página que nasce de um card (ou volta para ele) usa a forma e a cor do card; as demais
+    // (busca, raiz) ficam sempre na cor de fundo, sem o clarão cinza durante a transição.
+    val casada = legendaDoCard
     val raio by av.transition.animateDp(transitionSpec = { tween(500, easing = CurvaIOS) }, label = "raio") {
-        if (it == EnterExitState.Visible) 0.dp else 14.dp
+        if (it == EnterExitState.Visible || !casada) 0.dp else 14.dp
     }
     val fundo by av.transition.animateColor(transitionSpec = { tween(500, easing = CurvaIOS) }, label = "fundo") {
-        if (it == EnterExitState.Visible) tema.background else tema.surfaceVariant
+        if (it == EnterExitState.Visible || !casada) tema.background else tema.surfaceVariant
     }
     // O conteúdo da pasta entra um pouco depois, para a legenda do card acompanhar a expansão primeiro
     val opacidadeConteudo by av.transition.animateFloat(
-        transitionSpec = { if (targetState == EnterExitState.Visible) tween(300, 140) else tween(180) },
+        transitionSpec = {
+            if (!casada) tween(350)
+            else if (targetState == EnterExitState.Visible) tween(300, 140)
+            else tween(180)
+        },
         label = "conteudo",
     ) {
         if (it == EnterExitState.Visible) 1f else 0f
@@ -427,7 +433,7 @@ private fun PaginaPasta(
                                         stiffness = 380f,
                                         visibilityThreshold = IntOffset(1, 1),
                                     ),
-                                ).animateContentSize(spring(dampingRatio = 0.85f, stiffness = 380f)),
+                                ),
                             ) {
                                 if (grade) {
                                     ItemGrade(
@@ -537,7 +543,7 @@ private fun Miniatura(
             AsyncImage(
                 request, f.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
                 onSuccess = { s ->
-                    if (aoCor != null) aoCor(corDominante(s.result.drawable))
+                    if (aoCor != null) runCatching { aoCor(corDominante(s.result.drawable)) }
                 },
             )
         } else {
