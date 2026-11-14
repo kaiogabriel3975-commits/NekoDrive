@@ -13,6 +13,7 @@ import androidx.compose.animation.animateColor
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.animateDp
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.spring
@@ -96,8 +97,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -148,12 +153,36 @@ internal fun Modifier.pastaBounds(
 
 /** Avisa que a galeria está fechando, para a volta à miniatura durar 0,2 s a mais que a abertura. */
 internal object TempoGaleria {
-    @Volatile var fechando = false
+    /** Verdadeiro do primeiro instante do fechamento até a galeria sair de cena. */
+    var fechando by mutableStateOf(false)
+
+    const val VOLTA_MS = 700 // mídia voltando para o lugar da miniatura
+    const val ESPERA_MS = 200 // mídia parada sobre a miniatura antes da troca
+    const val TROCA_MS = 60 // troca da mídia pela miniatura
+    const val TOTAL_MS = VOLTA_MS + ESPERA_MS + TROCA_MS
 }
+
+/** Curva do movimento de volta: termina em VOLTA_MS e fica parada até a troca (para a mídia não sair do lugar). */
+private val CurvaVolta = Easing { f -> CurvaIOS.transform((f * TempoGaleria.TOTAL_MS / TempoGaleria.VOLTA_MS).coerceAtMost(1f)) }
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 private val CurvaMidia = BoundsTransform { _, _ ->
-    tween(durationMillis = if (TempoGaleria.fechando) 700 else 500, easing = CurvaIOS)
+    if (TempoGaleria.fechando) {
+        tween(durationMillis = TempoGaleria.TOTAL_MS, easing = CurvaVolta)
+    } else {
+        tween(durationMillis = 500, easing = CurvaIOS)
+    }
+}
+
+/** Sem corte no overlay: a mídia inclinada pode aparecer em qualquer parte da tela. */
+@OptIn(ExperimentalSharedTransitionApi::class)
+private val SemCorte = object : SharedTransitionScope.OverlayClip {
+    override fun getClipPath(
+        sharedContentState: SharedTransitionScope.SharedContentState,
+        bounds: Rect,
+        layoutDirection: LayoutDirection,
+        density: Density,
+    ): Path? = null
 }
 
 /**
@@ -173,10 +202,21 @@ internal fun Modifier.midiaBounds(
         this@midiaBounds.sharedBounds(
             rememberSharedContentState(key = chave),
             animatedVisibilityScope = av,
-            enter = if (miniatura) fadeIn(tween(250, delayMillis = 450)) else EnterTransition.None,
-            exit = if (miniatura) fadeOut(tween(120)) else ExitTransition.None,
+            // abrindo: a miniatura some logo e a mídia cresce sozinha; fechando: a mídia volta, fica 0,2 s
+            // sobre o lugar da miniatura e então é trocada por ela
+            enter = if (miniatura) {
+                fadeIn(tween(TempoGaleria.TROCA_MS, delayMillis = TempoGaleria.VOLTA_MS + TempoGaleria.ESPERA_MS))
+            } else {
+                EnterTransition.None
+            },
+            exit = if (miniatura) {
+                fadeOut(tween(120))
+            } else {
+                fadeOut(tween(TempoGaleria.TROCA_MS, delayMillis = TempoGaleria.VOLTA_MS + TempoGaleria.ESPERA_MS))
+            },
             boundsTransform = CurvaMidia,
             resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
+            clipInOverlayDuringTransition = SemCorte,
         )
     }
 
@@ -217,7 +257,10 @@ fun DriveScreen(
     val avancando = historico[1] > historico[0]
     val voltando = historico[1] < historico[0]
 
-    BackHandler(enabled = vm.buscando || vm.pilha.size > 1) { vm.voltar() }
+    // enquanto a mídia está fechando, voltar de pasta é ignorado (espera a animação terminar)
+    BackHandler(enabled = vm.buscando || vm.pilha.size > 1 || TempoGaleria.fechando) {
+        if (!TempoGaleria.fechando) vm.voltar()
+    }
     BackHandler(enabled = vm.selecionados.isNotEmpty()) { vm.limparSelecao() }
 
     if (vm.contaAtual == null) {
@@ -226,7 +269,8 @@ fun DriveScreen(
     }
 
     val aoTocar: (DriveFile) -> Unit = { f ->
-        if (vm.selecionados.isNotEmpty()) vm.alternarSelecao(f)
+        if (TempoGaleria.fechando) Unit
+        else if (vm.selecionados.isNotEmpty()) vm.alternarSelecao(f)
         else if (f.isFolder) vm.abrirPasta(f)
         else if (f.isImage || f.isVideo) vm.abrirFoto(f)
         else arquivoExterno = f
@@ -362,7 +406,7 @@ private fun Barra(vm: DriveViewModel, aoOrdem: () -> Unit, aoExcluir: () -> Unit
             }
         } else {
             if (vm.pilha.size > 1) {
-                CirculoVidro(aoClicar = { vm.voltar() }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Voltar", tint = cor) }
+                CirculoVidro(aoClicar = { if (!TempoGaleria.fechando) vm.voltar() }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Voltar", tint = cor) }
             }
             Spacer(Modifier.weight(1f))
             CirculoVidro(aoClicar = { vm.iniciarBusca() }) { Icon(Icons.Rounded.Search, "Buscar", tint = cor) }
