@@ -1,6 +1,5 @@
 package com.nekodrive.app.ui.drive
 
-import android.graphics.drawable.BitmapDrawable
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -11,7 +10,9 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.animateColor
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateDp
 import androidx.compose.animation.core.animateFloat
@@ -109,6 +110,8 @@ import com.nekodrive.app.ui.abrirComOutroApp
 import com.nekodrive.app.ui.fonteVidro
 import com.nekodrive.app.ui.galeria.BotaoVidro
 import com.nekodrive.app.ui.galeria.CirculoVidro
+import com.nekodrive.app.ui.galeria.ItemMenuVidro
+import com.nekodrive.app.ui.galeria.MenuVidro
 import com.nekodrive.app.ui.galeria.PilulaVidro
 import com.nekodrive.app.ui.rememberRebote
 import com.nekodrive.app.ui.vidro
@@ -158,6 +161,28 @@ fun DriveScreen(
     var arquivoExterno by remember { mutableStateOf<DriveFile?>(null) }
     val ctxDrive = LocalContext.current
     val escopoDrive = rememberCoroutineScope()
+    var menuOrdem by remember { mutableStateOf(false) }
+
+    // Troca grade/lista: o texto some rápido, o layout troca (itens deslizam) e o texto volta
+    var gradeExibida by remember { mutableStateOf(vm.grade) }
+    val alfaTextos = remember { Animatable(1f) }
+    LaunchedEffect(vm.grade) {
+        if (vm.grade != gradeExibida) {
+            alfaTextos.animateTo(0f, tween(110))
+            gradeExibida = vm.grade
+            alfaTextos.animateTo(1f, tween(180))
+        }
+    }
+
+    // Direção da navegação entre pastas (para saber em qual página fica a legenda do card)
+    val profundidade = vm.pilha.size
+    val historico = remember { intArrayOf(profundidade, profundidade) }
+    if (historico[1] != profundidade) {
+        historico[0] = historico[1]
+        historico[1] = profundidade
+    }
+    val avancando = historico[1] > historico[0]
+    val voltando = historico[1] < historico[0]
 
     BackHandler(enabled = vm.buscando || vm.pilha.size > 1) { vm.voltar() }
     BackHandler(enabled = vm.selecionados.isNotEmpty()) { vm.limparSelecao() }
@@ -189,6 +214,10 @@ fun DriveScreen(
                 st = st,
                 av = this@AnimatedContent,
                 avExterno = avExterno,
+                grade = gradeExibida,
+                alfaTextos = { alfaTextos.value },
+                legendaDoCard = !vm.buscando && chavePagina != "busca" && chavePagina != vm.pilha.first().id &&
+                    (if (avancando) chavePagina == chave else if (voltando) chavePagina != chave else false),
                 espaco = PaddingValues(
                     top = contentPadding.calculateTopPadding() + alturaTopo,
                     bottom = contentPadding.calculateBottomPadding(),
@@ -201,12 +230,27 @@ fun DriveScreen(
             aoMedir = { alturaTopo = it },
             modifier = Modifier.align(Alignment.TopCenter),
         ) {
-            Barra(vm) { confirmar = true }
+            Barra(vm, aoOrdem = { menuOrdem = true }) { confirmar = true }
             vm.erro?.let { msg ->
                 PilulaVidro(Modifier.padding(horizontal = 12.dp)) {
                     Text(msg, Modifier.padding(start = 10.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     TextButton(onClick = { vm.recarregar() }) { Text("Tentar de novo") }
                 }
+            }
+        }
+        MenuVidro(
+            aberto = menuOrdem,
+            aoFechar = { menuOrdem = false },
+            modifier = Modifier.align(Alignment.TopEnd)
+                .padding(top = contentPadding.calculateTopPadding() + 62.dp, end = 12.dp),
+        ) {
+            CampoOrdem.entries.forEach { campo ->
+                val seta = if (campo == vm.campo) (if (vm.crescente) "  ↑" else "  ↓") else ""
+                ItemMenuVidro(
+                    campo.rotulo + seta,
+                    { vm.definirOrdem(campo); menuOrdem = false },
+                    cor = MaterialTheme.colorScheme.onSurface,
+                )
             }
         }
     }
@@ -241,7 +285,7 @@ fun DriveScreen(
 // ---------- botões flutuantes do topo (cada um em círculo ou pílula de vidro) ----------
 
 @Composable
-private fun Barra(vm: DriveViewModel, aoExcluir: () -> Unit) {
+private fun Barra(vm: DriveViewModel, aoOrdem: () -> Unit, aoExcluir: () -> Unit) {
     val cor = MaterialTheme.colorScheme.onSurface
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
@@ -284,24 +328,12 @@ private fun Barra(vm: DriveViewModel, aoExcluir: () -> Unit) {
                 )
             }
         } else {
-            var menuOrdem by remember { mutableStateOf(false) }
             if (vm.pilha.size > 1) {
                 CirculoVidro(aoClicar = { vm.voltar() }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Voltar", tint = cor) }
             }
             Spacer(Modifier.weight(1f))
             CirculoVidro(aoClicar = { vm.iniciarBusca() }) { Icon(Icons.Rounded.Search, "Buscar", tint = cor) }
-            Box {
-                CirculoVidro(aoClicar = { menuOrdem = true }) { Icon(Icons.AutoMirrored.Rounded.Sort, "Ordenar", tint = cor) }
-                DropdownMenu(expanded = menuOrdem, onDismissRequest = { menuOrdem = false }) {
-                    CampoOrdem.entries.forEach { campo ->
-                        val seta = if (campo == vm.campo) (if (vm.crescente) "  ↑" else "  ↓") else ""
-                        DropdownMenuItem(
-                            text = { Text(campo.rotulo + seta) },
-                            onClick = { vm.definirOrdem(campo); menuOrdem = false },
-                        )
-                    }
-                }
-            }
+            CirculoVidro(aoClicar = aoOrdem) { Icon(Icons.AutoMirrored.Rounded.Sort, "Ordenar", tint = cor) }
             CirculoVidro(aoClicar = { vm.alternarModo() }) {
                 Icon(
                     if (vm.grade) Icons.AutoMirrored.Rounded.ViewList else Icons.Rounded.GridView,
@@ -324,6 +356,9 @@ private fun PaginaPasta(
     st: SharedTransitionScope,
     av: AnimatedVisibilityScope,
     avExterno: AnimatedVisibilityScope,
+    grade: Boolean,
+    alfaTextos: () -> Float,
+    legendaDoCard: Boolean,
     espaco: PaddingValues,
     aoTocar: (DriveFile) -> Unit,
 ) {
@@ -331,7 +366,10 @@ private fun PaginaPasta(
     val ultima = remember { mutableStateOf<List<DriveFile>>(emptyList()) }
     if (atual) SideEffect { ultima.value = vm.itens }
     val lista = if (atual) vm.itens else ultima.value
-    val grade = vm.grade
+    val nomePasta = remember {
+        mutableStateOf(if (atual && !vm.buscando) vm.pilha.last().nome else "")
+    }
+    if (atual && !vm.buscando) SideEffect { nomePasta.value = vm.pilha.last().nome }
 
     // A tela da pasta nasce com o formato e a cor do card e vai virando tela cheia (e o contrário ao fechar)
     val tema = MaterialTheme.colorScheme
@@ -341,8 +379,18 @@ private fun PaginaPasta(
     val fundo by av.transition.animateColor(transitionSpec = { tween(500, easing = CurvaIOS) }, label = "fundo") {
         if (it == EnterExitState.Visible) tema.background else tema.surfaceVariant
     }
-    val opacidadeConteudo by av.transition.animateFloat(transitionSpec = { tween(350) }, label = "conteudo") {
+    // O conteúdo da pasta entra um pouco depois, para a legenda do card acompanhar a expansão primeiro
+    val opacidadeConteudo by av.transition.animateFloat(
+        transitionSpec = { if (targetState == EnterExitState.Visible) tween(300, 140) else tween(180) },
+        label = "conteudo",
+    ) {
         if (it == EnterExitState.Visible) 1f else 0f
+    }
+    val alfaLegenda by av.transition.animateFloat(
+        transitionSpec = { tween(if (targetState == EnterExitState.Visible) 260 else 200) },
+        label = "legenda",
+    ) {
+        if (it == EnterExitState.Visible) 0f else 1f
     }
     val rebote = rememberRebote(carregando = vm.carregando && atual, aoAtualizar = { vm.atualizar() })
 
@@ -351,6 +399,7 @@ private fun PaginaPasta(
         shape = RoundedCornerShape(raio),
         color = fundo,
     ) {
+        Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = opacidadeConteudo }.nestedScroll(rebote)) {
             Box(Modifier.fillMaxSize().graphicsLayer { translationY = rebote.deslocamento }) {
                 CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
@@ -378,17 +427,19 @@ private fun PaginaPasta(
                                         stiffness = 380f,
                                         visibilityThreshold = IntOffset(1, 1),
                                     ),
-                                ),
+                                ).animateContentSize(spring(dampingRatio = 0.85f, stiffness = 380f)),
                             ) {
                                 if (grade) {
                                     ItemGrade(
                                         f, vm.token, f.id in vm.selecionados, vm.estadoDe(f), st, av, avExterno,
                                         { aoTocar(f) }, { vm.alternarSelecao(f) },
+                                        alfaTexto = alfaTextos,
                                     )
                                 } else {
                                     ItemLinha(
                                         f, vm.token, f.id in vm.selecionados, vm.estadoDe(f), st, av, avExterno,
                                         { aoTocar(f) }, { vm.alternarSelecao(f) },
+                                        alfaTexto = alfaTextos,
                                     )
                                 }
                             }
@@ -415,6 +466,37 @@ private fun PaginaPasta(
                     Text(msg, Modifier.align(Alignment.Center))
                 }
             }
+        }
+        if (legendaDoCard && nomePasta.value.isNotEmpty()) {
+            FantasmaCard(nomePasta.value, grade) { alfaLegenda }
+        }
+        }
+    }
+}
+
+/**
+ * Ícone e legenda do card, desenhados dentro da própria tela da pasta durante a transição: acompanham a
+ * borda do card enquanto ele se expande (e voltam com ela ao fechar), em vez de sumirem de uma vez.
+ */
+@Composable
+private fun FantasmaCard(nome: String, grade: Boolean, alfa: () -> Float) {
+    val tema = MaterialTheme.colorScheme
+    Box(Modifier.fillMaxSize().graphicsLayer { this.alpha = alfa() }) {
+        if (grade) {
+            Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.Folder, contentDescription = null, modifier = Modifier.size(44.dp), tint = tema.primary)
+            }
+            NomeUmaLinha(
+                nome,
+                Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(8.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = tema.onSurfaceVariant,
+            )
+        } else {
+            Icon(
+                Icons.Rounded.Folder, contentDescription = null,
+                modifier = Modifier.align(Alignment.Center).size(28.dp), tint = tema.primary,
+            )
         }
     }
 }
@@ -455,9 +537,7 @@ private fun Miniatura(
             AsyncImage(
                 request, f.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
                 onSuccess = { s ->
-                    if (aoCor != null) {
-                        (s.result.drawable as? BitmapDrawable)?.bitmap?.let { b -> aoCor(corDominante(b)) }
-                    }
+                    if (aoCor != null) aoCor(corDominante(s.result.drawable))
                 },
             )
         } else {
@@ -503,6 +583,34 @@ private fun Miniatura(
     }
 }
 
+/** Cores de um item de mídia: fundo e texto seguem a cor que mais aparece na miniatura, de forma gradual. */
+private class TintaMidia(val fundo: Color, val texto: Color, val tingido: Boolean, val aoCor: ((Color) -> Unit)?)
+
+@Composable
+private fun tintaMidia(f: DriveFile, neutro: Color, textoNeutro: Color): TintaMidia {
+    val tema = MaterialTheme.colorScheme
+    var dominante by remember(f.id) { mutableStateOf(CoresMidia.obter(f.id)) }
+    val alvoFundo = dominante?.let { lerp(tema.surfaceVariant, it, 0.55f) } ?: neutro
+    val fundo by animateColorAsState(alvoFundo, tween(700), label = "corCard")
+    val alvoTexto = when {
+        dominante == null -> textoNeutro
+        fundo.luminance() > 0.5f -> Color(0xFF1B1B1F)
+        else -> Color.White
+    }
+    val texto by animateColorAsState(alvoTexto, tween(700), label = "corTexto")
+    val aoCor: ((Color) -> Unit)? = if (f.isImage || f.isVideo) {
+        { c ->
+            if (c != Color.Unspecified) {
+                CoresMidia.guardar(f.id, c)
+                dominante = c
+            }
+        }
+    } else {
+        null
+    }
+    return TintaMidia(fundo, texto, dominante != null, aoCor)
+}
+
 /**
  * Card da grade: miniatura e legenda formam uma peça só, na mesma cor. Em fotos e vídeos a cor segue a cor que
  * mais aparece na mídia (surge aos poucos quando a miniatura carrega). Em pastas, o card inteiro é a origem da animação.
@@ -519,18 +627,13 @@ internal fun ItemGrade(
     avExterno: AnimatedVisibilityScope,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    alfaTexto: () -> Float = { 1f },
 ) {
     val haptico = LocalHapticFeedback.current
     val tema = MaterialTheme.colorScheme
-    var dominante by remember(f.id) { mutableStateOf(CoresMidia.obter(f.id)) }
-    val alvoCard = dominante?.let { lerp(tema.surfaceVariant, it, 0.55f) } ?: tema.surfaceVariant
-    val corCard by animateColorAsState(alvoCard, tween(700), label = "corCard")
-    val alvoTexto = when {
-        dominante == null -> tema.onSurfaceVariant
-        corCard.luminance() > 0.5f -> Color(0xFF1B1B1F)
-        else -> Color.White
-    }
-    val corTexto by animateColorAsState(alvoTexto, tween(700), label = "corTexto")
+    val tinta = tintaMidia(f, tema.surfaceVariant, tema.onSurfaceVariant)
+    val corCard = tinta.fundo
+    val corTexto = tinta.texto
 
     val forma = RoundedCornerShape(14.dp)
     val origemCard = if (f.isFolder) Modifier.pastaBounds("pasta-${f.id}", st, av, desvanecerOrigem = true) else Modifier
@@ -552,16 +655,7 @@ internal fun ItemGrade(
         Box(Modifier.fillMaxWidth().aspectRatio(1f).then(origemMiniatura)) {
             Miniatura(
                 f, token, estado, 44.dp, Modifier.fillMaxSize(),
-                aoCor = if (f.isImage || f.isVideo) {
-                    { c ->
-                        if (c != Color.Unspecified) {
-                            CoresMidia.guardar(f.id, c)
-                            dominante = c
-                        }
-                    }
-                } else {
-                    null
-                },
+                aoCor = tinta.aoCor,
             )
             if (selecionado) {
                 Icon(
@@ -571,7 +665,12 @@ internal fun ItemGrade(
                 )
             }
         }
-        NomeUmaLinha(f.name, Modifier.fillMaxWidth().padding(8.dp), style = MaterialTheme.typography.bodySmall, color = corTexto)
+        NomeUmaLinha(
+            f.name,
+            Modifier.fillMaxWidth().padding(8.dp).graphicsLayer { alpha = alfaTexto() },
+            style = MaterialTheme.typography.bodySmall,
+            color = corTexto,
+        )
     }
 }
 
@@ -588,35 +687,44 @@ internal fun ItemLinha(
     avExterno: AnimatedVisibilityScope,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    alfaTexto: () -> Float = { 1f },
 ) {
     val haptico = LocalHapticFeedback.current
+    val tema = MaterialTheme.colorScheme
+    val tinta = tintaMidia(f, Color.Transparent, tema.onSurface)
+    val forma = RoundedCornerShape(14.dp)
     val origem = when {
         f.isFolder -> Modifier.pastaBounds("pasta-${f.id}", st, av, desvanecerOrigem = true)
         f.isImage -> Modifier.pastaBounds("foto-${f.id}", st, avExterno)
         f.isVideo -> Modifier.pastaBounds("video-${f.id}", st, avExterno)
         else -> Modifier
     }
-    val fundo = if (selecionado) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+    val fundo = if (selecionado) tema.primaryContainer else tinta.fundo
+    val corNome = if (selecionado) tema.onPrimaryContainer else tinta.texto
     Row(
         Modifier.fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 2.dp)
+            .clip(forma)
             .background(fundo)
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = { haptico.performHapticFeedback(HapticFeedbackType.LongPress); onLongClick() },
             )
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Miniatura(
             f, token, estado, 28.dp,
             Modifier.size(56.dp).then(origem).clip(RoundedCornerShape(10.dp)),
-            fundo = MaterialTheme.colorScheme.surfaceVariant,
+            fundo = tema.surfaceVariant,
+            aoCor = tinta.aoCor,
         )
-        Column(Modifier.weight(1f).padding(start = 12.dp)) {
-            NomeUmaLinha(f.name, Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyLarge)
+        Column(Modifier.weight(1f).padding(start = 12.dp).graphicsLayer { alpha = alfaTexto() }) {
+            NomeUmaLinha(f.name, Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyLarge, color = corNome)
             val sub = listOfNotNull(formatarData(f.modifiedTime), formatarTamanho(f.size)).joinToString("  ·  ")
             if (sub.isNotEmpty()) {
-                Text(sub, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val corSub = if (selecionado) tema.onPrimaryContainer else if (tinta.tingido) tinta.texto.copy(alpha = 0.8f) else tema.onSurfaceVariant
+                Text(sub, style = MaterialTheme.typography.bodySmall, color = corSub)
             }
         }
         if (selecionado) {

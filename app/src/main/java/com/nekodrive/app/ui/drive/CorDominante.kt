@@ -2,6 +2,8 @@ package com.nekodrive.app.ui.drive
 
 import android.graphics.Bitmap
 import android.graphics.drawable.AnimatedImageDrawable
+import android.graphics.drawable.Drawable
+import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.ui.graphics.Color
 import coil.request.ImageRequest
 import coil.request.repeatCount
@@ -32,6 +34,13 @@ fun corDominante(bitmap: Bitmap): Color {
     val melhor = grupos.values.maxByOrNull { it[0] } ?: return Color.Unspecified
     val n = melhor[0].toFloat()
     return Color(melhor[1] / n / 255f, melhor[2] / n / 255f, melhor[3] / n / 255f)
+}
+
+/** Cor dominante de qualquer imagem carregada (fotos, vídeos e o primeiro quadro de GIFs). */
+fun corDominante(drawable: Drawable): Color = try {
+    corDominante(drawable.toBitmap(24, 24))
+} catch (e: Exception) {
+    Color.Unspecified
 }
 
 /** GIFs e imagens animadas repetem para sempre enquanto estiverem na tela. */
