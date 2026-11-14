@@ -149,6 +149,7 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -177,19 +178,19 @@ private fun tempo(ms: Long): String {
  * Efeito de fechamento integrado: a mídia encolhe de leve em direção ao centro e o topo inclina para trás em
  * perspectiva (base como referência). [progresso] vai de 0 a 1; a inclinação cresce com o quadrado dele,
  * então começa devagar e ganha velocidade (aceleração). [inclinar] (0 a 1 a 0) é a inclinação que acompanha a
- * animação de fechar até a miniatura. Usado tanto no gesto quanto nos botões de voltar.
+ * animação de fechar até a miniatura. Deve ficar FORA do clip da mídia, senão a inclinação é cortada no formato dela.
  */
-private fun Modifier.efeitoFechar(progresso: () -> Float, inclinar: () -> Float): Modifier = this
+private fun Modifier.efeitoFechar(arrasto: () -> Float, encolher: () -> Float, inclinar: () -> Float): Modifier = this
     .graphicsLayer {
-        val q = progresso()
-        val suave = q * q * (3f - 2f * q)
-        val s = 1f - 0.07f * suave
+        // encolher: diminui com mola (elástico); o deslize vertical segue o dedo, sem elasticidade
+        val e = encolher()
+        val s = 1f - 0.15f * e
         scaleX = s
         scaleY = s
-        translationY = q * size.height * 0.10f
+        translationY = arrasto() * size.height * 0.10f
     }
     .graphicsLayer {
-        val q = progresso()
+        val q = arrasto()
         // gesto de arrastar (q) + inclinação que acompanha a volta à miniatura: sobe, passa do meio e assenta (inclinar)
         rotationX = 9f * q * q + 14f * inclinar()
         transformOrigin = TransformOrigin(0.5f, 1f)
@@ -228,6 +229,8 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
     val progresso = remember { Animatable(0f) }
     val aparecer = remember { Animatable(0f) }
     val inclinar = remember { Animatable(0f) }
+    val encolher = remember { Animatable(0f) }
+    val ctrlRef = remember { mutableStateOf<ControleVideo?>(null) } // o player só existe mais abaixo; fechar() precisa dele
     var abriu by remember { mutableStateOf(false) }
     var fechando by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
@@ -236,14 +239,21 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
         abriu = true
     }
     DisposableEffect(Unit) { onDispose { TempoGaleria.fechando = false } }
+    // a mídia diminui com mola atrás do arrasto (e volta com mola ao soltar)
+    LaunchedEffect(Unit) {
+        snapshotFlow { progresso.value }.collectLatest { q ->
+            encolher.animateTo(q, spring(dampingRatio = 0.45f, stiffness = 380f))
+        }
+    }
 
     /** Fecha por qualquer caminho (gesto, voltar, botão) com a mesma animação integrada. */
     fun fechar() {
         if (fechando) return
         fechando = true
         TempoGaleria.fechando = true
+        ctrlRef.value?.player?.pause() // ao soltar o dedo e começar a fechar, o vídeo pausa
         vm.fecharFoto()
-        // 700 ms no total (a abertura leva 500): o fundo some, o arrasto se desfaz e a inclinação sobe e assenta
+        // volta em 700 ms (a abertura leva 500) e a mídia fica mais 0,2 s sobre a miniatura antes da troca
         scope.launch { aparecer.animateTo(0f, tween(650)) }
         scope.launch { progresso.animateTo(0f, tween(300, easing = CurvaIOS)) }
         scope.launch {
@@ -270,6 +280,7 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
     }
     val ultimoCtrl = remember { mutableStateOf<ControleVideo?>(null) }
     if (ctrl != null) SideEffect { ultimoCtrl.value = ctrl }
+    SideEffect { ctrlRef.value = ctrl }
     DisposableEffect(ctrl) {
         ctrl?.iniciar()
         onDispose { ctrl?.liberar() }
@@ -375,7 +386,7 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                             if (progresso.value > 0.38f || velocidadeDedo > 2500f) {
                                 fechar()
                             } else {
-                                progresso.animateTo(0f, spring(dampingRatio = 0.7f, stiffness = 260f))
+                                progresso.animateTo(0f, spring(dampingRatio = 1f, stiffness = 300f))
                             }
                         },
                     ),
@@ -420,6 +431,7 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                                     compartilhar = i == ativa,
                                     progresso = { progresso.value },
                                     inclinar = { inclinar.value },
+                                    encolher = { encolher.value },
                                     st = st,
                                     av = av,
                                     aoZoom = { zoomado = it },
@@ -436,6 +448,7 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                                     compartilhar = i == ativa,
                                     progresso = { progresso.value },
                                     inclinar = { inclinar.value },
+                                    encolher = { encolher.value },
                                     st = st,
                                     av = av,
                                     aoZoom = { zoomado = it },
@@ -695,6 +708,7 @@ private fun PaginaFoto(
     compartilhar: Boolean,
     progresso: () -> Float,
     inclinar: () -> Float,
+    encolher: () -> Float,
     st: SharedTransitionScope,
     av: AnimatedVisibilityScope,
     aoZoom: (Boolean) -> Unit,
@@ -819,8 +833,8 @@ private fun PaginaFoto(
             ) {
                 Box(
                     caixa.then(origem)
-                        .clip(if (compartilhar) RoundedCornerShape(raio) else RectangleShape)
-                        .efeitoFechar(progresso, inclinar),
+                        .efeitoFechar(progresso, encolher, inclinar)
+                        .clip(if (compartilhar) RoundedCornerShape(raio) else RectangleShape),
                 ) {
                 val original = ImageRequest.Builder(ctx)
                     .data(arquivoLocal ?: "https://www.googleapis.com/drive/v3/files/${f.id}?alt=media")
@@ -870,6 +884,7 @@ private fun PaginaVideo(
     compartilhar: Boolean,
     progresso: () -> Float,
     inclinar: () -> Float,
+    encolher: () -> Float,
     st: SharedTransitionScope,
     av: AnimatedVisibilityScope,
     aoZoom: (Boolean) -> Unit,
@@ -981,11 +996,13 @@ private fun PaginaVideo(
             ) {
               Box(
                 caixa.then(origem)
-                    .clip(if (compartilhar) RoundedCornerShape(raio) else RectangleShape)
-                    .efeitoFechar(progresso, inclinar),
+                    .efeitoFechar(progresso, encolher, inclinar)
+                    .clip(if (compartilhar) RoundedCornerShape(raio) else RectangleShape),
                 contentAlignment = Alignment.Center,
               ) {
-                if (f.thumbnailLink != null) {
+                // ao fechar, com o vídeo pronto, só o vídeo diminui (a miniatura entra depois, na troca)
+                val soVideo = TempoGaleria.fechando && ctrl != null && ctrl.pronto
+                if (f.thumbnailLink != null && !soVideo) {
                     val miniatura = ImageRequest.Builder(ctx)
                         .data(f.thumbnailLink)
                         .apply { if (token != null) addHeader("Authorization", "Bearer $token") }
