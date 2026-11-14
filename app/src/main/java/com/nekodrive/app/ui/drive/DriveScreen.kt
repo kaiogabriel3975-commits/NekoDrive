@@ -151,6 +151,7 @@ internal object TempoGaleria {
     @Volatile var fechando = false
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 private val CurvaMidia = BoundsTransform { _, _ ->
     tween(durationMillis = if (TempoGaleria.fechando) 700 else 500, easing = CurvaIOS)
 }
