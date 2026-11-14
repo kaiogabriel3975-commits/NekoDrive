@@ -15,6 +15,17 @@ object CoresMidia {
     fun guardar(id: String, cor: Color) { mapa[id] = cor }
 }
 
+/** Proporção (largura/altura) de cada miniatura já carregada: a galeria usa para abrir direto no formato certo. */
+object ProporcoesMidia {
+    private val mapa = HashMap<String, Float>()
+    fun obter(id: String): Float? = mapa[id]
+    fun guardar(id: String, drawable: Drawable) {
+        val w = drawable.intrinsicWidth
+        val h = drawable.intrinsicHeight
+        if (w > 0 && h > 0) mapa[id] = w.toFloat() / h.toFloat()
+    }
+}
+
 /** Cor que mais aparece na imagem (amostra reduzida, cores agrupadas em faixas). */
 fun corDominante(bitmap: Bitmap): Color {
     val pequeno = Bitmap.createScaledBitmap(bitmap, 24, 24, true)

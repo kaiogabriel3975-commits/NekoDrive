@@ -146,6 +146,39 @@ internal fun Modifier.pastaBounds(
         )
     }
 
+/** Avisa que a galeria está fechando, para a volta à miniatura durar 0,2 s a mais que a abertura. */
+internal object TempoGaleria {
+    @Volatile var fechando = false
+}
+
+private val CurvaMidia = BoundsTransform { _, _ ->
+    tween(durationMillis = if (TempoGaleria.fechando) 700 else 500, easing = CurvaIOS)
+}
+
+/**
+ * Origem/destino da animação de fotos e vídeos. Do lado da miniatura, o conteúdo some logo que a abertura
+ * começa e só reaparece no fim do fechamento: durante o trajeto quem aparece é a própria mídia, que se
+ * adapta suavemente do recorte quadrado da miniatura para o formato original.
+ */
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+internal fun Modifier.midiaBounds(
+    chave: String,
+    st: SharedTransitionScope,
+    av: AnimatedVisibilityScope,
+    miniatura: Boolean,
+): Modifier =
+    with(st) {
+        this@midiaBounds.sharedBounds(
+            rememberSharedContentState(key = chave),
+            animatedVisibilityScope = av,
+            enter = if (miniatura) fadeIn(tween(250, delayMillis = 450)) else EnterTransition.None,
+            exit = if (miniatura) fadeOut(tween(120)) else ExitTransition.None,
+            boundsTransform = CurvaMidia,
+            resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
+        )
+    }
+
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun DriveScreen(
@@ -543,6 +576,7 @@ private fun Miniatura(
             AsyncImage(
                 request, f.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
                 onSuccess = { s ->
+                    if (f.isImage || f.isVideo) ProporcoesMidia.guardar(f.id, s.result.drawable)
                     if (aoCor != null) runCatching { aoCor(corDominante(s.result.drawable)) }
                 },
             )
@@ -644,8 +678,8 @@ internal fun ItemGrade(
     val forma = RoundedCornerShape(14.dp)
     val origemCard = if (f.isFolder) Modifier.pastaBounds("pasta-${f.id}", st, av, desvanecerOrigem = true) else Modifier
     val origemMiniatura = when {
-        f.isImage -> Modifier.pastaBounds("foto-${f.id}", st, avExterno)
-        f.isVideo -> Modifier.pastaBounds("video-${f.id}", st, avExterno)
+        f.isImage -> Modifier.midiaBounds("foto-${f.id}", st, avExterno, miniatura = true)
+        f.isVideo -> Modifier.midiaBounds("video-${f.id}", st, avExterno, miniatura = true)
         else -> Modifier
     }
     Column(
@@ -701,8 +735,8 @@ internal fun ItemLinha(
     val forma = RoundedCornerShape(14.dp)
     val origem = when {
         f.isFolder -> Modifier.pastaBounds("pasta-${f.id}", st, av, desvanecerOrigem = true)
-        f.isImage -> Modifier.pastaBounds("foto-${f.id}", st, avExterno)
-        f.isVideo -> Modifier.pastaBounds("video-${f.id}", st, avExterno)
+        f.isImage -> Modifier.midiaBounds("foto-${f.id}", st, avExterno, miniatura = true)
+        f.isVideo -> Modifier.midiaBounds("video-${f.id}", st, avExterno, miniatura = true)
         else -> Modifier
     }
     val fundo = if (selecionado) tema.primaryContainer else tinta.fundo
