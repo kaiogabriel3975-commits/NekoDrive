@@ -47,6 +47,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.HorizontalPager
@@ -242,23 +243,28 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
     // a mídia diminui com mola atrás do arrasto (e volta com mola ao soltar)
     LaunchedEffect(Unit) {
         snapshotFlow { progresso.value }.collectLatest { q ->
-            encolher.animateTo(q, spring(dampingRatio = 0.45f, stiffness = 380f))
+            encolher.animateTo(q, spring(dampingRatio = 0.8f, stiffness = 170f))
         }
     }
 
     /** Fecha por qualquer caminho (gesto, voltar, botão) com a mesma animação integrada. */
-    fun fechar() {
+    fun fechar(velocidade: Float = 0f) {
         if (fechando) return
         fechando = true
+        // Duração da volta: 350 ms ao fechar por botão; quanto mais longe e mais rápido o deslize, mais curta
+        val longe = progresso.value
+        val rapidez = (velocidade / 3500f).coerceIn(0f, 1f)
+        val ms = (350f * (1f - 0.35f * longe) * (1f - 0.30f * rapidez)).toInt().coerceIn(180, 350)
+        TempoGaleria.voltaMs = ms
         TempoGaleria.fechando = true
         ctrlRef.value?.player?.pause() // ao soltar o dedo e começar a fechar, o vídeo pausa
         vm.fecharFoto()
-        // volta em 700 ms (a abertura leva 500) e a mídia fica mais 0,2 s sobre a miniatura antes da troca
-        scope.launch { aparecer.animateTo(0f, tween(650)) }
-        scope.launch { progresso.animateTo(0f, tween(300, easing = CurvaIOS)) }
+        // a mídia volta em [ms] e fica mais 0,2 s sobre a miniatura antes da troca
+        scope.launch { aparecer.animateTo(0f, tween(ms + 100)) }
+        scope.launch { progresso.animateTo(0f, tween(minOf(ms, 300), easing = CurvaIOS)) }
         scope.launch {
-            inclinar.animateTo(1f, tween(300, easing = FastOutSlowInEasing))
-            inclinar.animateTo(0f, tween(400, easing = CurvaIOS))
+            inclinar.animateTo(1f, tween((ms * 0.43f).toInt(), easing = FastOutSlowInEasing))
+            inclinar.animateTo(0f, tween((ms * 0.57f).toInt(), easing = CurvaIOS))
         }
     }
 
@@ -384,7 +390,7 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                         enabled = !zoomado && ctrl?.turbo != true && !fechando,
                         onDragStopped = { velocidadeDedo ->
                             if (progresso.value > 0.38f || velocidadeDedo > 2500f) {
-                                fechar()
+                                fechar(velocidadeDedo)
                             } else {
                                 progresso.animateTo(0f, spring(dampingRatio = 1f, stiffness = 300f))
                             }
@@ -725,7 +731,7 @@ private fun PaginaFoto(
 
     // Cantos arredondados da miniatura viram cantos retos aos poucos (e o contrário ao fechar)
     val raio by av.transition.animateDp(
-        transitionSpec = { tween(if (targetState == EnterExitState.Visible) 500 else 700, easing = CurvaIOS) },
+        transitionSpec = { tween(if (targetState == EnterExitState.Visible) 500 else TempoGaleria.voltaMs, easing = CurvaIOS) },
         label = "raio",
     ) {
         if (it == EnterExitState.Visible) 0.dp else 14.dp
@@ -896,13 +902,13 @@ private fun PaginaVideo(
     var deslocamento by remember { mutableStateOf(Offset.Zero) }
 
     val raio by av.transition.animateDp(
-        transitionSpec = { tween(if (targetState == EnterExitState.Visible) 500 else 700, easing = CurvaIOS) },
+        transitionSpec = { tween(if (targetState == EnterExitState.Visible) 500 else TempoGaleria.voltaMs, easing = CurvaIOS) },
         label = "raio",
     ) {
         if (it == EnterExitState.Visible) 0.dp else 14.dp
     }
     val origem = if (compartilhar) Modifier.midiaBounds("video-${f.id}", st, av, miniatura = false) else Modifier
-    val razao = ProporcoesMidia.obter(f.id) ?: ctrl?.takeIf { it.pronto }?.proporcao
+    val razao = ctrl?.takeIf { it.pronto }?.proporcao ?: ProporcoesMidia.obter(f.id)
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val w = constraints.maxWidth.toFloat()
@@ -1014,10 +1020,18 @@ private fun PaginaVideo(
                 }
                 if (ctrl != null) {
                     key(ctrl) {
-                        AndroidView(
-                            factory = { c -> TextureView(c).also { tv -> ctrl.player.setVideoTextureView(tv) } },
-                            modifier = Modifier.aspectRatio(ctrl.proporcao),
-                        )
+                        // o vídeo COBRE a moldura (recorte central, igual à miniatura): sem faixas cinzas enquanto ela encolhe
+                        BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            val v = ctrl.proporcao
+                            val cobre = maxHeight.value <= 0f || maxWidth / maxHeight > v
+                            AndroidView(
+                                factory = { c -> TextureView(c).also { tv -> ctrl.player.setVideoTextureView(tv) } },
+                                modifier = Modifier.requiredSize(
+                                    if (cobre) maxWidth else maxHeight * v,
+                                    if (cobre) maxWidth / v else maxHeight,
+                                ),
+                            )
+                        }
                     }
                 }
               }
