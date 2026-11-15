@@ -43,7 +43,9 @@ fun Modifier.saturar(): Modifier = this.drawWithContent {
 @Composable
 fun Modifier.vidro(): Modifier {
     val v = LocalVidro.current ?: return this
-    return this.saturar().hazeEffect(state = v.estado, style = v.estilo)
+    return this.saturar().hazeEffect(state = v.estado, style = v.estilo) {
+        blurEnabled = true // o Haze deixa o blur desligado no Android 12 por padrão
+    }
 }
 
 /** Desfoque em gradiente: intenso no topo e sumindo para baixo (cabeçalho), com +35% de saturação. */
@@ -51,6 +53,7 @@ fun Modifier.vidro(): Modifier {
 fun Modifier.vidroGradiente(): Modifier {
     val v = LocalVidro.current ?: return this
     return this.saturar().hazeEffect(state = v.estado, style = v.estiloCabecalho) {
+        blurEnabled = true
         progressive = HazeProgressive.verticalGradient(startIntensity = 1f, endIntensity = 0f)
     }
 }
