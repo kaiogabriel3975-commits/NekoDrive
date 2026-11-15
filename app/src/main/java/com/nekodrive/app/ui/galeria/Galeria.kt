@@ -114,8 +114,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.PictureInPictureModeChangedInfo
@@ -1020,18 +1022,22 @@ private fun PaginaVideo(
                 }
                 if (ctrl != null) {
                     key(ctrl) {
-                        // o vídeo COBRE a moldura (recorte central, igual à miniatura): sem faixas cinzas enquanto ela encolhe
-                        BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            val v = ctrl.proporcao
-                            val cobre = maxHeight.value <= 0f || maxWidth / maxHeight > v
-                            AndroidView(
-                                factory = { c -> TextureView(c).also { tv -> ctrl.player.setVideoTextureView(tv) } },
-                                modifier = Modifier.requiredSize(
-                                    if (cobre) maxWidth else maxHeight * v,
-                                    if (cobre) maxWidth / v else maxHeight,
-                                ),
-                            )
-                        }
+                        // O vídeo COBRE a moldura (recorte central, igual à miniatura): em pé encosta nas laterais,
+                        // deitado encosta no topo e na base. O tamanho é calculado na medição (layout) e não numa
+                        // subcomposição (BoxWithConstraints), que durante a animação ficaria presa ao tamanho final.
+                        AndroidView(
+                            factory = { c -> TextureView(c).also { tv -> ctrl.player.setVideoTextureView(tv) } },
+                            modifier = Modifier.fillMaxSize().layout { medido, restricoes ->
+                                val w = restricoes.maxWidth
+                                val h = restricoes.maxHeight
+                                val v = ctrl.proporcao
+                                val cobre = h <= 0 || w.toFloat() / h > v
+                                val lv = if (cobre) w else (h * v).roundToInt()
+                                val av = if (cobre) (w / v).roundToInt() else h
+                                val p = medido.measure(Constraints.fixed(lv.coerceAtLeast(1), av.coerceAtLeast(1)))
+                                layout(w, h) { p.place((w - lv) / 2, (h - av) / 2) }
+                            },
+                        )
                     }
                 }
               }
