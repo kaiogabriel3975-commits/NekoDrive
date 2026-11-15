@@ -1,3 +1,4 @@
+[Uploading README.md…]()
 # nekodrive
 
 App Android (Kotlin + Jetpack Compose) para ver vídeos e fotos do Google Drive.
@@ -180,3 +181,20 @@ O workflow se recusa a rodar se `KEYSTORE_BASE64` já existir, para você não t
 - Card da pasta: o ícone e a legenda acompanham a borda do card enquanto ele se expande e voltam com ela ao fechar; o conteúdo da pasta entra um pouco depois
 - Grade e lista: o texto some rápido, os itens deslizam e mudam de tamanho com mola, e o texto volta
 - Puxar para baixo no topo atualiza (confirmado)
+
+## Quarta rodada (animação de fotos e vídeos)
+
+- Abertura e fechamento: a mídia cresce da miniatura quadrada (recorte central) até o formato original, sem a miniatura por cima
+- Fechamento: a mídia volta ao lugar da miniatura, fica 0,2 s parada e então é trocada por ela; a inclinação sobe e assenta junto com a volta e não é mais cortada
+- A duração da volta é 0,35 s por botão e diminui conforme a distância e a velocidade do deslize (mínimo de cerca de 0,18 s)
+- Encolher ao arrastar usa mola no estilo Apple (amortecimento 0,8); o deslize vertical segue o dedo sem elasticidade
+- Vídeo: pausa ao começar a fechar; durante a volta só o vídeo aparece e ele cobre a moldura (em pé encosta nas laterais, deitado no topo e na base)
+- Enquanto a mídia fecha, voltar de pasta e toques nos itens são ignorados
+
+## Quinta rodada (resoluções, troca grade/lista e blur no Android 12)
+
+- Resoluções do player: 4K, 2K, 1080p, 720p, 540p, 480p, 360p, 240p e 144p, só as que o vídeo comporta (pelo lado menor da imagem, então vídeo em pé também funciona). Cada degrau usa a menor fonte igual ou maior (original ou versão convertida do Drive) e o player reduz a imagem para o degrau quando a fonte é maior (dependência media3-effect). A banda gasta é a da fonte, não a do degrau
+- Padrão: 1080p no Wi-Fi e 540p nos dados móveis, com ajuste automático pela rede enquanto o usuário não escolher
+- Troca grade/lista: cada item parte do tamanho que tinha e vai para o novo com mola (só desenho, sem alterar o layout); o texto volta em fade depois do movimento
+- Blur ligado também no Android 12 (o Haze o desliga por padrão nessa versão)
+
