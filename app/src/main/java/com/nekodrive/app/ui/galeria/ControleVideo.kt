@@ -21,6 +21,7 @@ import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
 import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.Presentation
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.google.android.gms.cast.framework.CastState
@@ -38,8 +39,25 @@ private const val API = "https://www.googleapis.com/drive/v3/files/"
 
 class Faixa(val rotulo: String, val grupo: Tracks.Group)
 
-/** Uma resolução disponível para o vídeo: a original ou uma versão convertida pelo Drive. */
-class Qualidade(val rotulo: String, val altura: Int, val url: String?, val original: Boolean)
+/**
+ * Uma resolução do player. [altura] é o lado menor da imagem (1080p vale para 1080x1920 também). [url] é a fonte
+ * (null = arquivo original); quando a fonte é maior que a resolução pedida, [alturaEfeito] é a altura em pixels
+ * para a qual o player reduz a imagem; [fonte] é o lado menor da fonte (usado no cache).
+ */
+class Qualidade(
+    val rotulo: String,
+    val altura: Int,
+    val url: String?,
+    val original: Boolean,
+    val alturaEfeito: Int = 0,
+    val fonte: Int = altura,
+)
+
+/** Resoluções oferecidas, da maior para a menor (lado menor da imagem). */
+private val ESCADA = listOf(2160, 1440, 1080, 720, 540, 480, 360, 240, 144)
+
+private fun ladoMenor(largura: Int, altura: Int): Int =
+    if (largura > 0 && altura > 0) minOf(largura, altura) else altura
 
 private fun rotuloAltura(h: Int): String = when {
     h >= 2000 -> "4K"
@@ -84,6 +102,7 @@ class ControleVideo(
     var qualidadeAutomatica by mutableStateOf(true); private set
     private var qualidadesCarregadas = false
     private var alturaOriginal = 0
+    private var larguraOriginal = 0
     private var redeWifi = true
 
     private var jaTransmitiu = false
@@ -101,6 +120,7 @@ class ControleVideo(
                 if (!qualidadesCarregadas && !convertida) {
                     qualidadesCarregadas = true
                     alturaOriginal = player.videoSize.height
+                    larguraOriginal = player.videoSize.width
                     if (alturaOriginal > 0) escopo.launch { carregarQualidades() }
                 }
             }
@@ -274,6 +294,7 @@ class ControleVideo(
         convertida = true
         erro = null
         carregando = true
+        player.setVideoEffects(emptyList())
         escopo.launch {
             try {
                 val url = vm.midia.urlConvertida(email, arquivo.id)
@@ -301,9 +322,14 @@ class ControleVideo(
 
     // ---------- resolução ----------
 
-    /** Descobre as resoluções disponíveis: a original e as versões convertidas menores que ela. */
+    /**
+     * Monta a lista de resoluções: a original e, abaixo dela, cada degrau da escada (4K a 144p) que o vídeo comporta.
+     * Cada degrau usa a menor fonte que ainda é igual ou maior que ele (a original ou uma versão convertida pelo
+     * Drive) e, se a fonte for maior, o player reduz a imagem para o degrau pedido.
+     */
     private suspend fun carregarQualidades() {
-        val original = Qualidade("${rotuloAltura(alturaOriginal)} (original)", alturaOriginal, null, true)
+        val lado = ladoMenor(larguraOriginal, alturaOriginal)
+        val original = Qualidade("${rotuloAltura(lado)} (original)", lado, null, true)
         val convertidas = try {
             vm.midia.formatosConvertidos(email, arquivo.id)
         } catch (e: CancellationException) {
@@ -311,8 +337,17 @@ class ControleVideo(
         } catch (e: Exception) {
             emptyList()
         }
-        val menores = convertidas.filter { it.altura < alturaOriginal }.map { Qualidade(rotuloAltura(it.altura), it.altura, it.url, false) }
-        qualidades = listOf(original) + menores
+        // fontes de onde o vídeo pode vir: (lado menor, endereço); endereço nulo = arquivo original
+        val fontes = listOf<Pair<Int, String?>>(lado to null) +
+            convertidas.map { ladoMenor(it.largura, it.altura) to (it.url as String?) }
+                .filter { it.first < lado * 0.97f }
+        val degraus = ESCADA.filter { it < lado * 0.97f }.mapNotNull { n ->
+            val fonte = fontes.filter { it.first >= n * 0.97f }.minByOrNull { it.first } ?: return@mapNotNull null
+            val exata = abs(fonte.first - n) <= n * 0.03f
+            val altPx = (alturaOriginal * n.toFloat() / lado).roundToInt().let { it - it % 2 }
+            Qualidade(rotuloAltura(n), n, fonte.second, false, if (exata) 0 else altPx, fonte.first)
+        }
+        qualidades = listOf(original) + degraus
         qualidadeAtual = original
         aplicarPolitica()
     }
@@ -332,8 +367,10 @@ class ControleVideo(
         val item = if (q.original) {
             montarItem(API + arquivo.id + "?alt=media", vm.chaveCache(arquivo))
         } else {
-            montarItem(q.url ?: return, vm.chaveCache(arquivo) + "|conv|" + q.altura)
+            montarItem(q.url ?: return, vm.chaveCache(arquivo) + "|conv|" + q.fonte)
         }
+        // fonte maior que a resolução pedida: o player reduz a imagem para a altura do degrau
+        player.setVideoEffects(if (q.alturaEfeito > 0) listOf(Presentation.createForHeight(q.alturaEfeito)) else emptyList())
         qualidadeAtual = q
         player.setMediaItem(item, pos)
         player.prepare()
