@@ -36,7 +36,7 @@ import kotlin.coroutines.coroutineContext
 private const val GB = 1024L * 1024L * 1024L
 
 /** Uma versão convertida do vídeo: [itag] do Drive, [altura] em pixels e o endereço do fluxo. */
-class FormatoConvertido(val itag: String, val altura: Int, val url: String)
+class FormatoConvertido(val itag: String, val altura: Int, val url: String, val largura: Int = 0)
 
 private val ALTURA_PADRAO = mapOf("37" to 1080, "22" to 720, "59" to 480, "35" to 480, "18" to 360, "34" to 360)
 
@@ -166,10 +166,12 @@ class MidiaCache(context: Context, private val auth: AuthManager, limiteGb: Int)
         if (campos["status"] != "ok") {
             throw IOException(campos["reason"] ?: "O Drive não ofereceu uma versão convertida deste vídeo")
         }
-        val alturas = (campos["fmt_list"] ?: "").split(',').mapNotNull { entrada ->
+        val dimensoes = (campos["fmt_list"] ?: "").split(',').mapNotNull { entrada ->
             val partes = entrada.split('/')
-            val altura = partes.getOrNull(1)?.split('x')?.getOrNull(1)?.toIntOrNull()
-            if (altura != null) partes[0] to altura else null
+            val wh = partes.getOrNull(1)?.split('x')
+            val largura = wh?.getOrNull(0)?.toIntOrNull() ?: 0
+            val altura = wh?.getOrNull(1)?.toIntOrNull()
+            if (altura != null) partes[0] to (largura to altura) else null
         }.toMap()
         val urls = (campos["fmt_stream_map"] ?: throw IOException("O Drive não devolveu os formatos convertidos"))
             .split(',')
@@ -178,8 +180,9 @@ class MidiaCache(context: Context, private val auth: AuthManager, limiteGb: Int)
                 if (i < 0) null else entrada.substring(0, i) to entrada.substring(i + 1).replace("\\u0026", "&")
             }.toMap()
         val formatos = urls.mapNotNull { (itag, url) ->
-            val altura = alturas[itag] ?: ALTURA_PADRAO[itag] ?: return@mapNotNull null
-            FormatoConvertido(itag, altura, url)
+            val dim = dimensoes[itag]
+            val altura = dim?.second ?: ALTURA_PADRAO[itag] ?: return@mapNotNull null
+            FormatoConvertido(itag, altura, url, dim?.first ?: 0)
         }.sortedByDescending { it.altura }
         if (formatos.isEmpty()) throw IOException("Nenhum formato convertido disponível")
         formatos
