@@ -89,20 +89,24 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -247,7 +251,7 @@ fun DriveScreen(
         if (vm.grade != gradeExibida) {
             alfaTextos.animateTo(0f, tween(110))
             gradeExibida = vm.grade
-            alfaTextos.animateTo(1f, tween(180))
+            alfaTextos.animateTo(1f, tween(180, delayMillis = 140))
         }
     }
 
@@ -482,6 +486,8 @@ private fun PaginaPasta(
     }
     val rebote = rememberRebote(carregando = vm.carregando && atual, aoAtualizar = { vm.atualizar() })
 
+    val morfe = remember { MorfeItens() }
+    morfe.trocar(grade)
     Surface(
         Modifier.pastaBounds("pasta-$chave", st, av).fonteVidro().fillMaxSize(),
         shape = RoundedCornerShape(raio),
@@ -515,7 +521,7 @@ private fun PaginaPasta(
                                         stiffness = 380f,
                                         visibilityThreshold = IntOffset(1, 1),
                                     ),
-                                ),
+                                ).morfar(morfe, f.id, grade),
                             ) {
                                 if (grade) {
                                     ItemGrade(
@@ -560,6 +566,58 @@ private fun PaginaPasta(
         }
         }
     }
+}
+
+/** Guarda o tamanho de cada item na grade e na lista, para o item "crescer" do tamanho antigo ao novo na troca. */
+private class MorfeItens {
+    val medidas = HashMap<String, IntSize>()
+    var anteriores: Map<String, IntSize> = emptyMap()
+    private var modo: Boolean? = null
+    private var instante = 0L
+
+    fun trocar(novo: Boolean) {
+        if (modo == null) {
+            modo = novo
+        } else if (modo != novo) {
+            anteriores = HashMap(medidas)
+            medidas.clear()
+            instante = System.nanoTime()
+            modo = novo
+        }
+    }
+
+    fun recente(): Boolean = System.nanoTime() - instante < 700_000_000L
+}
+
+/**
+ * Na troca entre grade e lista, cada item começa com o tamanho que tinha no modo anterior e vai para o novo com
+ * mola (a posição já é animada por animateItem). Só mexe no desenho (escala), nunca no layout.
+ */
+@Composable
+private fun Modifier.morfar(m: MorfeItens, id: String, grade: Boolean): Modifier {
+    val animar = remember(grade) { m.recente() && m.anteriores.containsKey(id) }
+    val progresso = remember(grade) { Animatable(if (animar) 0f else 1f) }
+    var inicial by remember(grade) { mutableStateOf(Offset(1f, 1f)) }
+    LaunchedEffect(grade) {
+        if (animar) progresso.animateTo(1f, spring(dampingRatio = 0.85f, stiffness = 260f))
+    }
+    return this
+        .onSizeChanged { tam ->
+            m.medidas[id] = tam
+            val ant = m.anteriores[id]
+            if (animar && ant != null && tam.width > 0 && tam.height > 0 && inicial == Offset(1f, 1f)) {
+                inicial = Offset(ant.width.toFloat() / tam.width, ant.height.toFloat() / tam.height)
+            }
+        }
+        .graphicsLayer {
+            val p = progresso.value
+            if (p != 1f) {
+                scaleX = inicial.x + (1f - inicial.x) * p
+                scaleY = inicial.y + (1f - inicial.y) * p
+                transformOrigin = TransformOrigin(0f, 0f)
+                alpha = (p / 0.45f).coerceIn(0f, 1f)
+            }
+        }
 }
 
 /**
