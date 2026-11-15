@@ -78,6 +78,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -156,19 +157,22 @@ internal object TempoGaleria {
     /** Verdadeiro do primeiro instante do fechamento até a galeria sair de cena. */
     var fechando by mutableStateOf(false)
 
-    const val VOLTA_MS = 700 // mídia voltando para o lugar da miniatura
+    /** Duração da volta da mídia até a miniatura; a galeria define a cada fechamento conforme o deslize. */
+    var voltaMs by mutableIntStateOf(350)
+
     const val ESPERA_MS = 200 // mídia parada sobre a miniatura antes da troca
     const val TROCA_MS = 60 // troca da mídia pela miniatura
-    const val TOTAL_MS = VOLTA_MS + ESPERA_MS + TROCA_MS
+
+    val totalMs: Int get() = voltaMs + ESPERA_MS + TROCA_MS
 }
 
 /** Curva do movimento de volta: termina em VOLTA_MS e fica parada até a troca (para a mídia não sair do lugar). */
-private val CurvaVolta = Easing { f -> CurvaIOS.transform((f * TempoGaleria.TOTAL_MS / TempoGaleria.VOLTA_MS).coerceAtMost(1f)) }
+private val CurvaVolta = Easing { f -> CurvaIOS.transform((f * TempoGaleria.totalMs / TempoGaleria.voltaMs).coerceAtMost(1f)) }
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 private val CurvaMidia = BoundsTransform { _, _ ->
     if (TempoGaleria.fechando) {
-        tween(durationMillis = TempoGaleria.TOTAL_MS, easing = CurvaVolta)
+        tween(durationMillis = TempoGaleria.totalMs, easing = CurvaVolta)
     } else {
         tween(durationMillis = 500, easing = CurvaIOS)
     }
@@ -205,14 +209,14 @@ internal fun Modifier.midiaBounds(
             // abrindo: a miniatura some logo e a mídia cresce sozinha; fechando: a mídia volta, fica 0,2 s
             // sobre o lugar da miniatura e então é trocada por ela
             enter = if (miniatura) {
-                fadeIn(tween(TempoGaleria.TROCA_MS, delayMillis = TempoGaleria.VOLTA_MS + TempoGaleria.ESPERA_MS))
+                fadeIn(tween(TempoGaleria.TROCA_MS, delayMillis = TempoGaleria.voltaMs + TempoGaleria.ESPERA_MS))
             } else {
                 EnterTransition.None
             },
             exit = if (miniatura) {
                 fadeOut(tween(120))
             } else {
-                fadeOut(tween(TempoGaleria.TROCA_MS, delayMillis = TempoGaleria.VOLTA_MS + TempoGaleria.ESPERA_MS))
+                fadeOut(tween(TempoGaleria.TROCA_MS, delayMillis = TempoGaleria.voltaMs + TempoGaleria.ESPERA_MS))
             },
             boundsTransform = CurvaMidia,
             resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
