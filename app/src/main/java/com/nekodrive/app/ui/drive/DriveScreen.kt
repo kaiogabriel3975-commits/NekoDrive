@@ -50,7 +50,9 @@ import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Folder
@@ -87,6 +89,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.platform.LocalFocusManager
+import com.nekodrive.app.ui.DialogRenomear
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
@@ -128,6 +132,9 @@ import kotlinx.coroutines.launch
 
 private val CurvaIOS = CubicBezierEasing(0.32f, 0.72f, 0f, 1f)
 
+/** Largura mínima de cada miniatura da grade, conforme o ajuste de tamanho. */
+internal fun larguraMiniatura(tamanho: Int): Dp = when (tamanho) { 0 -> 90.dp; 2 -> 150.dp; else -> 110.dp }
+
 /** Mesma duração de antes (cerca de 500 ms) com curva de desaceleração suave, no estilo das animações do iOS. */
 @OptIn(ExperimentalSharedTransitionApi::class)
 private val CurvaSuave = BoundsTransform { _, _ -> tween(durationMillis = 500, easing = CurvaIOS) }
@@ -164,10 +171,11 @@ internal object TempoGaleria {
     /** Duração da volta da mídia até a miniatura; a galeria define a cada fechamento conforme o deslize. */
     var voltaMs by mutableIntStateOf(350)
 
-    const val ESPERA_MS = 200 // mídia parada sobre a miniatura antes da troca
-    const val TROCA_MS = 60 // troca da mídia pela miniatura
+    /** Mídia parada sobre a miniatura antes da troca. É só visual, mas segura os toques: por isso é curta e ajustável. */
+    var esperaMs = 100
+    const val TROCA_MS = 40 // troca da mídia pela miniatura
 
-    val totalMs: Int get() = voltaMs + ESPERA_MS + TROCA_MS
+    val totalMs: Int get() = voltaMs + esperaMs + TROCA_MS
 }
 
 /** Curva do movimento de volta: termina em VOLTA_MS e fica parada até a troca (para a mídia não sair do lugar). */
@@ -213,14 +221,14 @@ internal fun Modifier.midiaBounds(
             // abrindo: a miniatura some logo e a mídia cresce sozinha; fechando: a mídia volta, fica 0,2 s
             // sobre o lugar da miniatura e então é trocada por ela
             enter = if (miniatura) {
-                fadeIn(tween(TempoGaleria.TROCA_MS, delayMillis = TempoGaleria.voltaMs + TempoGaleria.ESPERA_MS))
+                fadeIn(tween(TempoGaleria.TROCA_MS, delayMillis = TempoGaleria.voltaMs + TempoGaleria.esperaMs))
             } else {
                 EnterTransition.None
             },
             exit = if (miniatura) {
                 fadeOut(tween(120))
             } else {
-                fadeOut(tween(TempoGaleria.TROCA_MS, delayMillis = TempoGaleria.voltaMs + TempoGaleria.ESPERA_MS))
+                fadeOut(tween(TempoGaleria.TROCA_MS, delayMillis = TempoGaleria.voltaMs + TempoGaleria.esperaMs))
             },
             boundsTransform = CurvaMidia,
             resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
@@ -243,6 +251,8 @@ fun DriveScreen(
     val ctxDrive = LocalContext.current
     val escopoDrive = rememberCoroutineScope()
     var menuOrdem by remember { mutableStateOf(false) }
+    var renomear by remember { mutableStateOf<DriveFile?>(null) }
+    val foco = LocalFocusManager.current
 
     // Troca grade/lista: o texto some rápido, o layout troca (itens deslizam) e o texto volta
     var gradeExibida by remember { mutableStateOf(vm.grade) }
@@ -280,7 +290,7 @@ fun DriveScreen(
         if (TempoGaleria.fechando) Unit
         else if (vm.selecionados.isNotEmpty()) vm.alternarSelecao(f)
         else if (f.isFolder) vm.abrirPasta(f)
-        else if (f.isImage || f.isVideo) vm.abrirFoto(f)
+        else if (f.isImage || f.isVideo) { foco.clearFocus(); vm.abrirFoto(f) }
         else arquivoExterno = f
     }
     val chave = if (vm.buscando) "busca" else vm.pilha.last().id
@@ -315,7 +325,7 @@ fun DriveScreen(
             aoMedir = { alturaTopo = it },
             modifier = Modifier.align(Alignment.TopCenter),
         ) {
-            Barra(vm, aoOrdem = { menuOrdem = true }) { confirmar = true }
+            Barra(vm, aoOrdem = { menuOrdem = true }, aoRenomear = { renomear = it }, aoCapa = { vm.abrirSeletorCapa(it) }) { confirmar = true }
             vm.erro?.let { msg ->
                 PilulaVidro(Modifier.padding(horizontal = 12.dp)) {
                     Text(msg, Modifier.padding(start = 10.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -338,6 +348,14 @@ fun DriveScreen(
                 )
             }
         }
+    }
+
+    renomear?.let { f ->
+        DialogRenomear(
+            nomeAtual = f.name,
+            aoConfirmar = { novo -> renomear = null; vm.renomear(f, novo) { vm.limparSelecao() } },
+            aoCancelar = { renomear = null },
+        )
     }
 
     arquivoExterno?.let { f ->
@@ -370,7 +388,13 @@ fun DriveScreen(
 // ---------- botões flutuantes do topo (cada um em círculo ou pílula de vidro) ----------
 
 @Composable
-private fun Barra(vm: DriveViewModel, aoOrdem: () -> Unit, aoExcluir: () -> Unit) {
+private fun Barra(
+    vm: DriveViewModel,
+    aoOrdem: () -> Unit,
+    aoRenomear: (DriveFile) -> Unit,
+    aoCapa: (DriveFile) -> Unit,
+    aoExcluir: () -> Unit,
+) {
     val cor = MaterialTheme.colorScheme.onSurface
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
@@ -380,22 +404,32 @@ private fun Barra(vm: DriveViewModel, aoOrdem: () -> Unit, aoExcluir: () -> Unit
         if (vm.selecionados.isNotEmpty()) {
             CirculoVidro(aoClicar = { vm.limparSelecao() }) { Icon(Icons.Rounded.Close, "Cancelar seleção", tint = cor) }
             PilulaVidro {
+                // só o número: com mais botões na pílula ao lado, o texto "selecionado(s)" não caberia
                 Text(
-                    "${vm.selecionados.size} selecionado(s)",
+                    "${vm.selecionados.size}",
                     Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.titleMedium,
                     color = cor,
                 )
             }
             Spacer(Modifier.weight(1f))
+            val unico = if (vm.selecionados.size == 1) vm.itens.firstOrNull { it.id in vm.selecionados } else null
             PilulaVidro {
                 BotaoVidro(Icons.Rounded.StarBorder, "Favoritar", { vm.favoritarSelecao(vm.itens) }, cor)
                 BotaoVidro(Icons.Rounded.Download, "Baixar", { vm.baixarSelecionados() }, cor)
+                if (unico != null) BotaoVidro(Icons.Rounded.Edit, "Renomear", { aoRenomear(unico) }, cor)
+                if (unico != null && unico.isFolder) BotaoVidro(Icons.Rounded.AddPhotoAlternate, "Definir capa", { aoCapa(unico) }, cor)
                 BotaoVidro(Icons.Rounded.Delete, "Mover para a lixeira", aoExcluir, cor)
             }
         } else if (vm.buscando) {
             val foco = remember { FocusRequester() }
-            LaunchedEffect(Unit) { foco.requestFocus() }
+            // o teclado só abre quando a busca começa; ao voltar de uma mídia a tela é recriada e não deve reabrir
+            LaunchedEffect(Unit) {
+                if (vm.pedirFocoBusca) {
+                    vm.consumirFocoBusca()
+                    runCatching { foco.requestFocus() }
+                }
+            }
             CirculoVidro(aoClicar = { vm.sairDaBusca() }) { Icon(Icons.Rounded.Close, "Fechar busca", tint = cor) }
             Box(Modifier.weight(1f).clip(RoundedCornerShape(50)).vidro()) {
                 TextField(
@@ -496,7 +530,7 @@ private fun PaginaPasta(
             Box(Modifier.fillMaxSize().graphicsLayer { translationY = rebote.deslocamento }) {
                 CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
                     LazyVerticalGrid(
-                        columns = if (grade) GridCells.Adaptive(110.dp) else GridCells.Fixed(1),
+                        columns = if (grade) GridCells.Adaptive(larguraMiniatura(vm.tamanhoMiniatura)) else GridCells.Fixed(1),
                         state = vm.estadoGrade(chave),
                         contentPadding = PaddingValues(
                             start = if (grade) 12.dp else 0.dp,
@@ -624,7 +658,22 @@ private fun Miniatura(
     val context = LocalContext.current
     val ehGif = f.mimeType == "image/gif"
     Box(modifier.background(fundo), contentAlignment = Alignment.Center) {
-        if (!f.isFolder && (f.thumbnailLink != null || ehGif)) {
+        val capa = estado.capa
+        if (f.isFolder && capa != null) {
+            // pasta com capa: a foto escolhida preenche o card, com um selo de pasta no canto
+            val pedido = ImageRequest.Builder(context)
+                .data("https://www.googleapis.com/drive/v3/files/$capa?alt=media")
+                .apply { if (token != null) addHeader("Authorization", "Bearer $token") }
+                .size(320, 320)
+                .crossfade(true)
+                .build()
+            AsyncImage(pedido, f.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            Icon(
+                Icons.Rounded.Folder, "Pasta", tint = Color.White,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp)
+                    .background(Color.Black.copy(alpha = 0.55f), CircleShape).padding(3.dp).size(14.dp),
+            )
+        } else if (!f.isFolder && (f.thumbnailLink != null || ehGif)) {
             // GIFs animam na miniatura, em baixa resolução e sem reduzir os quadros por segundo
             val request = ImageRequest.Builder(context)
                 .data(if (ehGif) "https://www.googleapis.com/drive/v3/files/${f.id}?alt=media" else f.thumbnailLink)
@@ -673,13 +722,6 @@ private fun Miniatura(
                     .background(Color.Black.copy(alpha = 0.55f), CircleShape).padding(3.dp).size(14.dp),
             )
         }
-        if (estado.assistido) {
-            Icon(
-                Icons.Rounded.TaskAlt, "Assistido", tint = Color.White,
-                modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp)
-                    .background(Color.Black.copy(alpha = 0.55f), CircleShape).padding(3.dp).size(14.dp),
-            )
-        }
     }
 }
 
@@ -690,7 +732,8 @@ private class TintaMidia(val fundo: Color, val texto: Color, val tingido: Boolea
 private fun tintaMidia(f: DriveFile, neutro: Color, textoNeutro: Color): TintaMidia {
     val tema = MaterialTheme.colorScheme
     var dominante by remember(f.id) { mutableStateOf(CoresMidia.obter(f.id)) }
-    val alvoFundo = dominante?.let { lerp(tema.surfaceVariant, it, 0.55f) } ?: neutro
+    // um toque de preto (22%) deixa o card mais escuro e o texto branco mais legível
+    val alvoFundo = dominante?.let { lerp(lerp(tema.surfaceVariant, it, 0.55f), Color.Black, 0.22f) } ?: neutro
     val fundo by animateColorAsState(alvoFundo, tween(700), label = "corCard")
     val alvoTexto = when {
         dominante == null -> textoNeutro

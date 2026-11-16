@@ -15,6 +15,7 @@ import androidx.lifecycle.viewModelScope
 import com.nekodrive.app.data.AppContainer
 import com.nekodrive.app.data.Progresso
 import com.nekodrive.app.data.auth.GoogleAccount
+import com.nekodrive.app.data.drive.ArquivoDePasta
 import com.nekodrive.app.data.drive.DriveFile
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -34,7 +35,26 @@ import java.net.UnknownHostException
 data class Pasta(val id: String, val nome: String)
 
 /** Situação de um arquivo na lista: salvo no cache, assistido, ou baixando (progresso de 0 a 1). */
-data class EstadoArquivo(val noCache: Boolean, val assistido: Boolean, val progresso: Float?, val favorito: Boolean = false)
+data class EstadoArquivo(
+    val noCache: Boolean,
+    val assistido: Boolean,
+    val progresso: Float?,
+    val favorito: Boolean = false,
+    /** Id da foto escolhida como capa (só para pastas). */
+    val capa: String? = null,
+)
+
+/** Pastas escolhidas para baixar: o que foi encontrado dentro delas e o quanto isso pesa. */
+class PlanoDownload(
+    val nomes: List<String>,
+    val arquivos: List<ArquivoDePasta>,
+    val ignorados: Int,
+    val calculando: Boolean,
+    val contados: Int = 0,
+) {
+    val bytes: Long get() = arquivos.sumOf { it.arquivo.size ?: 0L }
+    val bytesMidia: Long get() = arquivos.filter { it.arquivo.isImage || it.arquivo.isVideo }.sumOf { it.arquivo.size ?: 0L }
+}
 
 /** Galeria aberta: fotos e vídeos da lista atual, na ordem da pasta, e o item em exibição. */
 data class FotosAbertas(val fotos: List<DriveFile>, val indice: Int)
@@ -66,6 +86,54 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     var selecionados by mutableStateOf(setOf<String>()); private set
 
     var visualizador by mutableStateOf<FotosAbertas?>(null); private set
+
+    // ---------- ajustes ----------
+    var vidroAtivo by mutableStateOf(c.prefs.vidro); private set
+    var tamanhoMiniatura by mutableIntStateOf(c.prefs.miniatura); private set
+    var repetirVideo by mutableStateOf(c.prefs.repetirVideo); private set
+    var retomarVideo by mutableStateOf(c.prefs.retomarVideo); private set
+    var saltoSeg by mutableIntStateOf(c.prefs.saltoSeg); private set
+    var velocidadeTurbo by mutableStateOf(c.prefs.turbo); private set
+    var resWifi by mutableIntStateOf(c.prefs.resWifi); private set
+    var resMovel by mutableIntStateOf(c.prefs.resMovel); private set
+    var controlesMs by mutableIntStateOf(c.prefs.controlesMs); private set
+    var esperaFecharMs by mutableIntStateOf(c.prefs.esperaFecharMs); private set
+    val tema: Int get() = c.prefs.tema
+
+    fun definirTema(v: Int) { c.prefs.tema = v }
+    fun definirVidro(v: Boolean) { vidroAtivo = v; c.prefs.vidro = v }
+    fun definirTamanhoMiniatura(v: Int) { tamanhoMiniatura = v; c.prefs.miniatura = v }
+    fun definirRepetirVideo(v: Boolean) { repetirVideo = v; c.prefs.repetirVideo = v }
+    fun definirRetomarVideo(v: Boolean) { retomarVideo = v; c.prefs.retomarVideo = v }
+    fun definirSaltoSeg(v: Int) { saltoSeg = v; c.prefs.saltoSeg = v }
+    fun definirTurbo(v: Float) { velocidadeTurbo = v; c.prefs.turbo = v }
+    fun definirResWifi(v: Int) { resWifi = v; c.prefs.resWifi = v }
+    fun definirResMovel(v: Int) { resMovel = v; c.prefs.resMovel = v }
+    fun definirControlesMs(v: Int) { controlesMs = v; c.prefs.controlesMs = v }
+    fun definirEsperaFechar(v: Int) { esperaFecharMs = v; c.prefs.esperaFecharMs = v; TempoGaleria.esperaMs = v }
+
+    val pediuNotificacao: Boolean get() = c.prefs.pediuNotificacao
+    fun marcarPediuNotificacao() { c.prefs.pediuNotificacao = true }
+
+    /** Verdadeiro só logo depois de tocar na lupa: o campo de busca pega o foco uma única vez. */
+    var pedirFocoBusca = false; private set
+    fun consumirFocoBusca() { pedirFocoBusca = false }
+
+    // capas de pasta (guardadas só no aparelho)
+    private val capas = mutableStateMapOf<String, String>()
+    var pastaDaCapa by mutableStateOf<DriveFile?>(null); private set
+    var imagensCapa by mutableStateOf<List<DriveFile>>(emptyList()); private set
+    var carregandoCapa by mutableStateOf(false); private set
+    var temMaisCapa by mutableStateOf(false); private set
+    private var proximaCapa: String? = null
+    private var jobCapa: Job? = null
+
+    // download de pastas inteiras
+    var planoDownload by mutableStateOf<PlanoDownload?>(null); private set
+    private var jobPlano: Job? = null
+
+    /** Arquivo cujas informações estão abertas (para o botão de renomear). */
+    var arquivoDetalhes by mutableStateOf<DriveFile?>(null); private set
 
     /** Muda quando o cache ou o progresso mudam, para as listas se atualizarem. */
     var versaoCache by mutableIntStateOf(0); private set
@@ -108,6 +176,7 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     private val cache = HashMap<String, Pair<List<DriveFile>, String?>>()
 
     init {
+        TempoGaleria.esperaMs = c.prefs.esperaFecharMs
         contaAtual = contas.firstOrNull { it.email == c.accounts.currentEmail } ?: contas.firstOrNull()
         c.midia.definirConta(contaAtual?.email)
         recarregarFavoritosLocais()
@@ -289,6 +358,7 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
         job?.cancel()
         reiniciarRolagem("busca")
         buscando = true; termo = ""
+        pedirFocoBusca = true
         itens = emptyList(); proxima = null; temMais = false; carregando = false
         erro = null; selecionados = emptySet()
     }
@@ -451,6 +521,7 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     fun abrirDetalhes(f: DriveFile, extras: List<Pair<String, String>> = emptyList()) {
         val conta = contaAtual ?: return
         tituloDetalhes = f.name
+        arquivoDetalhes = f
         detalhes = emptyList()
         carregandoDetalhes = true
         viewModelScope.launch {
@@ -475,7 +546,7 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    fun fecharDetalhes() { detalhes = null }
+    fun fecharDetalhes() { detalhes = null; arquivoDetalhes = null }
 
     /** Baixa o arquivo para a pasta de cópias do cache (usada pelo botão copiar) e devolve o arquivo. */
     suspend fun copiarParaCache(f: DriveFile, pasta: String = "copiar"): File {
@@ -503,10 +574,11 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
             assistido = f.isVideo && c.playback.obter(conta.email, f.id)?.assistido == true,
             progresso = progressos[f.id],
             favorito = f.id in favoritosIds,
+            capa = if (f.isFolder) capas[f.id] else null,
         )
     }
 
-    fun baixar(f: DriveFile) {
+    fun baixar(f: DriveFile, subpasta: String? = null) {
         val conta = contaAtual ?: return
         if (f.isFolder || tarefas[f.id]?.isActive == true) return
         val midia = f.isImage || f.isVideo
@@ -518,10 +590,10 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
                     if (midia) {
                         c.midia.baixar(conta.email, f) { p -> progressos[f.id] = p }
                     } else {
-                        salvarEmDownloads(conta.email, f)
+                        salvarEmDownloads(conta.email, f, subpasta)
                     }
                 }
-                if (!midia) aviso = "“${f.name}” salvo em Downloads"
+                if (!midia && subpasta == null) aviso = "“${f.name}” salvo em Downloads"
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -534,12 +606,12 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     /** Arquivos que não são fotos nem vídeos são salvos na pasta Downloads do Android (não no cache do app). */
-    private suspend fun salvarEmDownloads(email: String, f: DriveFile) = withContext(Dispatchers.IO) {
+    private suspend fun salvarEmDownloads(email: String, f: DriveFile, subpasta: String? = null) = withContext(Dispatchers.IO) {
         val resolver = c.resolver
         val valores = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, f.name)
             put(MediaStore.Downloads.MIME_TYPE, f.mimeType.ifEmpty { "application/octet-stream" })
-            put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + (subpasta?.let { "/" + it } ?: ""))
             put(MediaStore.Downloads.IS_PENDING, 1)
         }
         val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, valores)
@@ -555,9 +627,141 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
+    /** Arquivos são baixados na hora; pastas pedem confirmação antes, mostrando quantos arquivos têm dentro. */
     fun baixarSelecionados() {
-        itens.filter { it.id in selecionados && !it.isFolder }.forEach { baixar(it) }
+        val alvo = (itens + favoritosItens).distinctBy { it.id }.filter { it.id in selecionados }
+        alvo.filter { !it.isFolder }.forEach { baixar(it) }
+        val pastas = alvo.filter { it.isFolder }
         selecionados = emptySet()
+        if (pastas.isNotEmpty()) prepararDownloadDePastas(pastas)
+    }
+
+    private fun prepararDownloadDePastas(pastas: List<DriveFile>) {
+        val conta = contaAtual ?: return
+        jobPlano?.cancel()
+        val nomes = pastas.map { it.name }
+        planoDownload = PlanoDownload(nomes, emptyList(), 0, calculando = true)
+        jobPlano = viewModelScope.launch {
+            try {
+                val todos = mutableListOf<ArquivoDePasta>()
+                for (p in pastas) {
+                    val base = todos.size
+                    todos += c.drive.arquivosDaPasta(conta.email, p.id, p.name) { n ->
+                        planoDownload = PlanoDownload(nomes, emptyList(), 0, calculando = true, contados = base + n)
+                    }
+                }
+                val baixaveis = todos.filter { !it.arquivo.mimeType.startsWith("application/vnd.google-apps") }
+                planoDownload = PlanoDownload(nomes, baixaveis, todos.size - baixaveis.size, calculando = false)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                planoDownload = null
+                aviso = "Não foi possível ler a pasta: ${e.message}"
+            }
+        }
+    }
+
+    fun confirmarDownloadDePastas() {
+        val plano = planoDownload ?: return
+        planoDownload = null
+        plano.arquivos.forEach { baixar(it.arquivo, it.caminho) }
+        aviso = "Baixando ${plano.arquivos.size} arquivo(s)…"
+    }
+
+    fun cancelarDownloadDePastas() {
+        jobPlano?.cancel()
+        planoDownload = null
+    }
+
+    // ---------- renomear ----------
+
+    /** Renomeia no Drive e atualiza o nome em todas as listas abertas. */
+    fun renomear(f: DriveFile, novoNome: String, aoConcluir: () -> Unit = {}) {
+        val conta = contaAtual ?: return
+        val nome = novoNome.trim()
+        if (nome.isEmpty() || nome == f.name) { aoConcluir(); return }
+        viewModelScope.launch {
+            try {
+                c.drive.renomear(conta.email, f.id, nome)
+                aplicarNome(f.id, nome)
+                aoConcluir()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                aviso = "Não foi possível renomear: ${e.message}"
+            }
+        }
+    }
+
+    private fun aplicarNome(id: String, nome: String) {
+        fun List<DriveFile>.ren() = map { if (it.id == id) it.copy(name = nome) else it }
+        itens = itens.ren()
+        favoritosItens = favoritosItens.ren()
+        contaAtual?.let { c.favoritos.salvar(it.email, favoritosItens) }
+        visualizador = visualizador?.let { it.copy(fotos = it.fotos.ren()) }
+        rolagem = rolagem?.let { it.first to it.second.ren() }
+        cache.entries.toList().forEach { (k, v) -> cache[k] = v.first.ren() to v.second }
+        pilha = pilha.map { if (it.id == id) it.copy(nome = nome) else it }
+        if (arquivoDetalhes?.id == id) {
+            arquivoDetalhes = arquivoDetalhes?.copy(name = nome)
+            tituloDetalhes = nome
+            detalhes = detalhes?.map { if (it.first == "Nome no Drive") it.first to nome else it }
+        }
+        versaoCache++
+    }
+
+    // ---------- capa de pasta ----------
+
+    fun capaDe(idPasta: String): String? = capas[idPasta]
+
+    fun abrirSeletorCapa(pasta: DriveFile) {
+        val conta = contaAtual ?: return
+        jobCapa?.cancel()
+        pastaDaCapa = pasta
+        imagensCapa = emptyList(); proximaCapa = null; temMaisCapa = false
+        jobCapa = viewModelScope.launch { paginaCapa(conta, pasta, null) }
+        selecionados = emptySet()
+    }
+
+    fun carregarMaisCapa() {
+        val conta = contaAtual ?: return
+        val pasta = pastaDaCapa ?: return
+        val pagina = proximaCapa ?: return
+        if (carregandoCapa) return
+        jobCapa = viewModelScope.launch { paginaCapa(conta, pasta, pagina) }
+    }
+
+    private suspend fun paginaCapa(conta: GoogleAccount, pasta: DriveFile, pagina: String?) {
+        carregandoCapa = true
+        try {
+            val p = c.drive.imagensDaPasta(conta.email, pasta.id, pagina)
+            imagensCapa = imagensCapa + p.files
+            proximaCapa = p.nextPageToken
+            temMaisCapa = proximaCapa != null
+            token = c.auth.token(conta.email)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            aviso = "Não foi possível listar as fotos: ${e.message}"
+        } finally {
+            carregandoCapa = false
+        }
+    }
+
+    fun fecharSeletorCapa() {
+        jobCapa?.cancel()
+        pastaDaCapa = null
+        imagensCapa = emptyList()
+    }
+
+    /** [foto] null remove a capa. */
+    fun escolherCapa(foto: DriveFile?) {
+        val conta = contaAtual ?: return
+        val pasta = pastaDaCapa ?: return
+        if (foto == null) capas.remove(pasta.id) else capas[pasta.id] = foto.id
+        c.capas.salvar(conta.email, capas.toMap())
+        versaoCache++
+        fecharSeletorCapa()
     }
 
     fun tamanhoCache(): Long = c.midia.tamanhoTotal()
@@ -581,6 +785,8 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
         favoritosItens = lista
         favoritosIds = lista.map { it.id }.toSet()
         indisponiveis = emptySet()
+        capas.clear()
+        contaAtual?.let { capas.putAll(c.capas.todas(it.email)) }
     }
 
     private fun gravarFavoritos(email: String, lista: List<DriveFile>) {
