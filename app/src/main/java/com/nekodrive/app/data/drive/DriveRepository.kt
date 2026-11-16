@@ -35,6 +35,9 @@ class UnauthorizedException : IOException("Sessão expirada")
 
 class DriveHttpException(val code: Int, mensagem: String) : IOException(mensagem)
 
+/** Arquivo achado dentro de uma pasta, com o caminho relativo ("Fotos/2024") a partir da pasta escolhida. */
+class ArquivoDePasta(val arquivo: DriveFile, val caminho: String)
+
 class DriveRepository(private val auth: AuthManager) {
     private val http = OkHttpClient()
     private val api = "https://www.googleapis.com/drive/v3/"
@@ -84,6 +87,47 @@ class DriveRepository(private val auth: AuthManager) {
                     .header("Authorization", "Bearer $token").build(),
             )
         }
+    }
+
+    /** Muda o nome de um arquivo ou pasta. */
+    suspend fun renomear(email: String, id: String, novoNome: String) {
+        comToken(email) { token ->
+            val corpo = JSONObject().put("name", novoNome).toString().toRequestBody("application/json".toMediaType())
+            executar(
+                Request.Builder().url(api + "files/" + id).patch(corpo)
+                    .header("Authorization", "Bearer $token").build(),
+            )
+        }
+    }
+
+    /** Fotos que estão diretamente dentro de uma pasta (para escolher a capa). */
+    suspend fun imagensDaPasta(email: String, idPasta: String, pagina: String?): DrivePage =
+        list(email, "'$idPasta' in parents and trashed = false and mimeType contains 'image/'", "name_natural", pagina)
+
+    /** Todos os arquivos de uma pasta e das subpastas, com o caminho relativo de cada um. */
+    suspend fun arquivosDaPasta(
+        email: String,
+        idPasta: String,
+        nomePasta: String,
+        aoContar: (Int) -> Unit = {},
+    ): List<ArquivoDePasta> {
+        fun limpo(n: String) = n.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifEmpty { "_" }
+        val resultado = mutableListOf<ArquivoDePasta>()
+        val fila = ArrayDeque<Pair<String, String>>()
+        fila.add(idPasta to limpo(nomePasta))
+        while (fila.isNotEmpty()) {
+            val (pasta, caminho) = fila.removeFirst()
+            var pagina: String? = null
+            do {
+                val p = list(email, "'$pasta' in parents and trashed = false", "folder,name_natural", pagina)
+                p.files.forEach { f ->
+                    if (f.isFolder) fila.add(f.id to caminho + "/" + limpo(f.name)) else resultado.add(ArquivoDePasta(f, caminho))
+                }
+                pagina = p.nextPageToken
+                aoContar(resultado.size)
+            } while (pagina != null)
+        }
+        return resultado
     }
 
     /** Metadados de um arquivo para o menu de informações (somente campos que a API confirma). */
