@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Rect
@@ -64,7 +65,10 @@ fun Modifier.vidro(): Modifier {
 @Composable
 fun Modifier.vidroGradiente(): Modifier {
     val v = LocalVidro.current ?: return this
-    if (!LocalVidroAtivo.current) return this
+    // sem blur: gradiente preto, mais forte no topo e sumindo para baixo
+    if (!LocalVidroAtivo.current) {
+        return this.background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.75f), Color.Transparent)))
+    }
     return this.saturar().hazeEffect(state = v.estado, style = v.estiloCabecalho) {
         blurEnabled = true
         progressive = HazeProgressive.verticalGradient(startIntensity = 1f, endIntensity = 0f)
