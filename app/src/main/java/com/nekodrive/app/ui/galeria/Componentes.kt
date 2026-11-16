@@ -2,6 +2,17 @@ package com.nekodrive.app.ui.galeria
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalOverscrollConfiguration
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import com.nekodrive.app.ui.Rebote
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -92,16 +103,19 @@ fun BotaoVidro(icone: ImageVector, descricao: String, aoClicar: () -> Unit, tint
 
 /**
  * Menu com blur (no lugar do menu opaco do sistema): fica na mesma composição, então o vidro desfoca o que está atrás.
- * Tocar fora fecha.
+ * Surge em 0,5 s com a mesma dissolução dos botões do player, tem largura do maior item, rola quando não cabe
+ * (com bounce nas pontas) e fecha ao tocar fora. [chave] muda quando o conteúdo troca, para voltar ao topo.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MenuVidro(
     aberto: Boolean,
     aoFechar: () -> Unit,
     modifier: Modifier = Modifier,
+    chave: Any? = null,
     conteudo: @Composable ColumnScope.() -> Unit,
 ) {
-    Dissolver(aberto, Modifier.fillMaxSize(), entradaMs = 160, saidaMs = 200) {
+    Dissolver(aberto, Modifier.fillMaxSize(), entradaMs = 500, saidaMs = 200) {
         Box(
             Modifier.fillMaxSize().clickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -109,20 +123,44 @@ fun MenuVidro(
                 onClick = aoFechar,
             ),
         )
-        Column(
-            modifier.clip(RoundedCornerShape(22.dp)).vidro().widthIn(min = 220.dp).padding(vertical = 8.dp),
-            content = conteudo,
-        )
+        val escopo = rememberCoroutineScope()
+        val rolagem = rememberScrollState()
+        val rebote = remember { Rebote(escopo, Float.MAX_VALUE) { } } // sem "puxar para atualizar": só o elástico
+        LaunchedEffect(chave) { rolagem.scrollTo(0) }
+        Box(
+            modifier.clip(RoundedCornerShape(22.dp)).vidro()
+                .widthIn(min = 150.dp, max = 260.dp).width(IntrinsicSize.Max),
+        ) {
+            CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
+                Column(
+                    Modifier
+                        .then(if (rolagem.maxValue > 0) Modifier.nestedScroll(rebote) else Modifier)
+                        .graphicsLayer { translationY = rebote.deslocamento }
+                        .verticalScroll(rolagem)
+                        .padding(vertical = 8.dp),
+                    content = conteudo,
+                )
+            }
+        }
     }
 }
 
 @Composable
-fun ItemMenuVidro(texto: String, aoClicar: () -> Unit, marcado: Boolean = false, cor: Color = Color.White) {
+fun ItemMenuVidro(
+    texto: String,
+    aoClicar: () -> Unit,
+    marcado: Boolean = false,
+    cor: Color = Color.White,
+    icone: ImageVector? = null,
+) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = aoClicar).padding(horizontal = 18.dp, vertical = 12.dp),
+        Modifier.fillMaxWidth().clickable(onClick = aoClicar).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(texto, color = cor, modifier = Modifier.weight(1f))
-        if (marcado) Text("✓", color = cor)
+        if (icone != null) {
+            Icon(icone, null, tint = cor, modifier = Modifier.padding(end = 10.dp).size(20.dp))
+        }
+        Text(texto, color = cor, modifier = Modifier.weight(1f, fill = false))
+        if (marcado) Text("  ✓", color = cor)
     }
 }

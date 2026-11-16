@@ -1,6 +1,10 @@
 package com.nekodrive.app.ui.galeria
 
+import android.Manifest
 import android.app.PictureInPictureParams
+import android.content.pm.PackageManager
+import android.graphics.drawable.Drawable
+import android.os.Build
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -11,6 +15,17 @@ import android.view.TextureView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.AwaitPointerEventScope
+import androidx.compose.ui.platform.LocalView
+import androidx.core.content.ContextCompat
+import com.nekodrive.app.ReprodutorSegundoPlano
+import com.nekodrive.app.ui.drive.CoresMidia
+import kotlinx.coroutines.Job
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.EnterExitState
@@ -202,7 +217,7 @@ private fun Modifier.efeitoFechar(arrasto: () -> Float, encolher: () -> Float, i
 
 /**
  * Galeria em tela cheia: fotos e vídeos da pasta na mesma sequência, com deslize horizontal.
- * Fotos: zoom, giro, copiar, compartilhar, baixar, favoritar, informações e excluir. Vídeos: player com gestos.
+ * Fotos: zoom, copiar, compartilhar, baixar, favoritar, informações e excluir. Vídeos: player com gestos.
  */
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalFoundationApi::class, UnstableApi::class)
 @Composable
@@ -226,7 +241,6 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
     var arrastandoSlider by remember { mutableStateOf(false) }
     var posSlider by remember { mutableFloatStateOf(0f) }
     var confirmarExclusao by remember { mutableStateOf(false) }
-    val giros = remember { mutableStateMapOf<String, Int>() }
 
     // progresso: 0 = galeria aberta, 1 = fechada. aparecer: opacidade do fundo preto (a mídia nunca fica transparente)
     val progresso = remember { Animatable(0f) }
@@ -278,7 +292,7 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
         blurRadius = 20.dp,
         noiseFactor = 0f,
     )
-    val vidroLocal = remember(vidroEstado, vidroEstilo) { Vidro(vidroEstado, vidroEstilo) }
+    val vidroLocal = remember(vidroEstado, vidroEstilo) { Vidro(vidroEstado, vidroEstilo, fundoSolido = Color.Black) }
 
     // ---------- controlador do vídeo ativo ----------
     val ctrl: ControleVideo? = if (ehVideo) {
@@ -314,9 +328,9 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
     LaunchedEffect(atual.id) { controles = true; zoomado = false; menu = 0 }
 
     // Os controles do vídeo somem sozinhos durante a reprodução
-    LaunchedEffect(controles, ctrl?.tocando, ctrl?.pronto, menu, arrastandoSlider) {
-        if (ctrl != null && controles && ctrl.tocando && ctrl.pronto && menu == 0 && !arrastandoSlider) {
-            delay(3500)
+    LaunchedEffect(controles, ctrl?.tocando, ctrl?.pronto, menu, arrastandoSlider, vm.controlesMs) {
+        if (ctrl != null && vm.controlesMs > 0 && controles && ctrl.tocando && ctrl.pronto && menu == 0 && !arrastandoSlider) {
+            delay(vm.controlesMs.toLong())
             controles = false
         }
     }
@@ -355,10 +369,63 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                 .setAutoEnterEnabled(ehVideo && ctrl?.tocando == true).build(),
         )
     }
+    // Entrou no Picture-in-Picture tocando: cria o serviço com a notificação (o app ainda está visível, então o
+    // sistema permite). Se o PiP for fechado no X, o áudio segue e os controles ficam na notificação.
+    LaunchedEffect(emPip) {
+        val c = ctrl
+        if (emPip && c != null && c.tocando) {
+            ReprodutorSegundoPlano.iniciar(ctx, c.player, atual.name) { c.salvarAgora() }
+        }
+    }
+    // Voltou para o app (PiP ampliado ou app reaberto): a notificação sai, o vídeo segue na tela
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { ReprodutorSegundoPlano.parar(ctx) }
+    DisposableEffect(Unit) { onDispose { ReprodutorSegundoPlano.parar(ctx) } }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
-        if (activity?.isInPictureInPictureMode != true) ctrl?.player?.pause()
+        val p = ctrl?.player
+        if (activity?.isInPictureInPictureMode == true) {
+            // PiP fechado: só continua se o serviço está de pé e o vídeo estava tocando
+            if (p != null && !(p.isPlaying && ReprodutorSegundoPlano.ativo)) {
+                p.pause()
+                ReprodutorSegundoPlano.parar(ctx)
+            }
+        } else {
+            p?.pause()
+        }
     }
     BackHandler { fechar() }
+
+    // A galeria tem fundo preto: no tema claro os ícones da barra de status e de navegação seriam escuros e sumiriam.
+    // Enquanto ela está aberta os ícones ficam claros; ao começar a fechar voltam ao padrão do tema.
+    val temaEscuro = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    DisposableEffect(activity) {
+        val janela = activity?.window
+        val c = janela?.let { WindowCompat.getInsetsController(it, it.decorView) }
+        c?.isAppearanceLightStatusBars = false
+        c?.isAppearanceLightNavigationBars = false
+        onDispose {
+            c?.isAppearanceLightStatusBars = !temaEscuro
+            c?.isAppearanceLightNavigationBars = !temaEscuro
+        }
+    }
+    LaunchedEffect(fechando) {
+        if (fechando) {
+            val janela = activity?.window ?: return@LaunchedEffect
+            val c = WindowCompat.getInsetsController(janela, janela.decorView)
+            c.isAppearanceLightStatusBars = !temaEscuro
+            c.isAppearanceLightNavigationBars = !temaEscuro
+        }
+    }
+
+    // Primeira vez que um vídeo abre: pede a permissão de notificações (Android 13+) para os controles em segundo plano
+    val pedirNotificacao = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    LaunchedEffect(ehVideo) {
+        if (ehVideo && Build.VERSION.SDK_INT >= 33 && !vm.pediuNotificacao &&
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            vm.marcarPediuNotificacao()
+            pedirNotificacao.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 
     val copiar: () -> Unit = {
         scope.launch {
@@ -451,7 +518,6 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                                     f = f,
                                     arquivoLocal = local,
                                     token = vm.token,
-                                    giro = giros[f.id] ?: 0,
                                     ehAtual = i == ativa,
                                     compartilhar = i == ativa,
                                     progresso = { progresso.value },
@@ -486,7 +552,6 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                 }
                 Dissolver(mostrarFoto, Modifier.align(Alignment.BottomCenter)) {
                     PilulaVidro(Modifier.navigationBarsPadding().padding(bottom = 16.dp)) {
-                        BotaoVidro(Icons.Rounded.RotateRight, "Girar", { giros[atual.id] = (giros[atual.id] ?: 0) + 1 })
                         // GIFs não têm botão de copiar
                         if (!ehGif) BotaoVidro(Icons.Rounded.ContentCopy, "Copiar imagem", copiar)
                         BotaoVidro(Icons.Rounded.Share, "Compartilhar", compartilhar)
@@ -576,10 +641,8 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                                         })
                                     }
                                     BotaoVidro(Icons.Rounded.Delete, "Mover para a lixeira", { confirmarExclusao = true })
-                                }
-                                // Menu de três pontos (o menu em si é desenhado com blur mais abaixo)
-                                CirculoVidro(aoClicar = { menu = 1 }, modifier = Modifier.align(Alignment.CenterEnd)) {
-                                    Icon(Icons.Rounded.MoreVert, "Mais opções", tint = Color.White)
+                                    // Três pontos: o menu em si é desenhado com blur mais abaixo
+                                    BotaoVidro(Icons.Rounded.MoreVert, "Mais opções", { menu = 1 })
                                 }
                             }
                         }
@@ -590,7 +653,9 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                 MenuVidro(
                     aberto = menu != 0 && c != null,
                     aoFechar = { menu = 0 },
-                    modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 16.dp, bottom = 130.dp),
+                    chave = menu,
+                    modifier = Modifier.align(Alignment.BottomEnd).statusBarsPadding().navigationBarsPadding()
+                        .padding(end = 16.dp, top = 12.dp, bottom = 130.dp),
                 ) {
                     if (c != null) {
                         when (menu) {
@@ -605,16 +670,21 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                                 ItemMenuVidro("Informações", { menu = 0; vm.abrirDetalhes(atual, c.extrasInfo()) })
                                 ItemMenuVidro("Abrir em outro player", { menu = 0; abrirPlayerExterno(ctx, vm, atual) })
                             }
-                            2 -> VELOCIDADES.forEach { v ->
-                                ItemMenuVidro("${v}x", { c.definirVelocidade(v); menu = 0 }, marcado = v == c.velocidade)
+                            2 -> {
+                                ItemMenuVidro("Voltar", { menu = 1 }, icone = Icons.AutoMirrored.Rounded.ArrowBack)
+                                VELOCIDADES.forEach { v ->
+                                    ItemMenuVidro("${v}x", { c.definirVelocidade(v); menu = 0 }, marcado = v == c.velocidade)
+                                }
                             }
                             3 -> {
+                                ItemMenuVidro("Voltar", { menu = 1 }, icone = Icons.AutoMirrored.Rounded.ArrowBack)
                                 ItemMenuVidro("Sem legenda", { c.escolherLegenda(null); menu = 0 }, marcado = c.faixas.none { it.grupo.isSelected })
                                 c.faixas.forEach { fx ->
                                     ItemMenuVidro(fx.rotulo, { c.escolherLegenda(fx); menu = 0 }, marcado = fx.grupo.isSelected)
                                 }
                             }
                             4 -> {
+                                ItemMenuVidro("Voltar", { menu = 1 }, icone = Icons.AutoMirrored.Rounded.ArrowBack)
                                 ItemMenuVidro("Automática", { c.escolherQualidade(null); menu = 0 }, marcado = c.qualidadeAutomatica)
                                 c.qualidades.forEach { q ->
                                     ItemMenuVidro(
@@ -704,14 +774,67 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
     }
 }
 
-/** Uma foto (ou GIF/imagem animada): zoom com pinça ou toque duplo, giro de 90° e toque para a interface. */
+/** Foco do zoom: novo deslocamento para o ponto tocado ficar parado na tela ao ir da escala [s0] para [s1] (> 1). */
+private fun deslocamentoParaFoco(foco: Offset, d0: Offset, s0: Float, s1: Float, w: Float, h: Float): Offset {
+    val p = foco - Offset(w / 2f, h / 2f)
+    val bruto = p - (p - d0) * (s1 / s0)
+    val lx = w * (s1 - 1f) / 2f
+    val ly = h * (s1 - 1f) / 2f
+    return Offset(bruto.x.coerceIn(-lx, lx), bruto.y.coerceIn(-ly, ly))
+}
+
+/**
+ * Pinça e arrasto de uma mídia. O zoom acontece em volta do ponto entre os dedos. Dá para afastar a mídia
+ * abaixo do tamanho normal (zoom out, até 0,6x); ao soltar, [aoSoltar] devolve ao tamanho certo.
+ */
+private suspend fun AwaitPointerEventScope.tratarPinca(
+    w: Float,
+    h: Float,
+    maximo: Float,
+    escala: () -> Float,
+    deslocamento: () -> Offset,
+    aplicar: (Float, Offset) -> Unit,
+    aoMudarZoom: (Boolean) -> Unit,
+    aoSoltar: () -> Unit,
+) {
+    awaitFirstDown(requireUnconsumed = false)
+    do {
+        val evento = awaitPointerEvent()
+        val toques = evento.changes.count { it.pressed }
+        if (toques >= 2 || escala() > 1f) {
+            val zoom = evento.calculateZoom()
+            val pan = evento.calculatePan()
+            val centroide = evento.calculateCentroid(useCurrent = true)
+            val s0 = escala()
+            val nova = (s0 * zoom).coerceIn(0.6f, maximo)
+            val novoDesloc = if (nova <= 1f) {
+                Offset.Zero
+            } else {
+                val centro = Offset(w / 2f, h / 2f)
+                val p = (if (centroide.isSpecified) centroide else centro) - centro
+                val d = (p - (p - deslocamento()) * (nova / s0)) + pan
+                val lx = w * (nova - 1f) / 2f
+                val ly = h * (nova - 1f) / 2f
+                Offset(d.x.coerceIn(-lx, lx), d.y.coerceIn(-ly, ly))
+            }
+            aplicar(nova, novoDesloc)
+            aoMudarZoom(nova > 1f)
+            evento.changes.forEach { if (it.positionChanged()) it.consume() }
+        }
+    } while (evento.changes.any { it.pressed })
+    aoSoltar()
+}
+
+/**
+ * Uma foto (ou GIF/imagem animada): zoom com pinça (também para menos de 1x, voltando ao soltar) ou toque duplo
+ * no ponto tocado, e toque para a interface. Segurar a foto por um instante a leva para outro app (arrastar e soltar).
+ */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun PaginaFoto(
     f: DriveFile,
     arquivoLocal: java.io.File?,
     token: String?,
-    giro: Int,
     ehAtual: Boolean,
     compartilhar: Boolean,
     progresso: () -> Float,
@@ -723,13 +846,13 @@ private fun PaginaFoto(
     aoTocar: () -> Unit,
 ) {
     val ctx = LocalContext.current
+    val view = LocalView.current
     val escopo = rememberCoroutineScope()
     var escala by remember { mutableFloatStateOf(1f) }
     var deslocamento by remember { mutableStateOf(Offset.Zero) }
     var proporcao by remember { mutableStateOf<Float?>(null) }
-    val rotacao = remember { Animatable(giro * 90f) }
-    val ajuste = remember { Animatable(1f) }
-    var giroAnterior by remember { mutableIntStateOf(giro) }
+    val carregada = remember { arrayOfNulls<Drawable>(1) }
+    val animacaoZoom = remember { arrayOfNulls<Job>(1) }
 
     // Cantos arredondados da miniatura viram cantos retos aos poucos (e o contrário ao fechar)
     val raio by av.transition.animateDp(
@@ -753,89 +876,64 @@ private fun PaginaFoto(
             Modifier.fillMaxSize()
         }
 
-        // Escala exata para a foto girada caber sem bordas desnecessárias (usa a proporção real da imagem)
-        val alvoAjuste = if (giro % 2 != 0) {
-            val r = proporcao
-            if (r == null) {
-                minOf(w / h, h / w)
-            } else {
-                val larguraExibida = if (w / h > r) h * r else w
-                val alturaExibida = if (w / h > r) h else w / r
-                minOf(w / alturaExibida, h / larguraExibida)
-            }
-        } else {
-            1f
-        }
-        LaunchedEffect(giro, proporcao) {
-            if (giro != giroAnterior) {
-                giroAnterior = giro
-                launch { rotacao.animateTo(giro * 90f, tween(520, easing = FastOutSlowInEasing)) }
-                // zoom out no meio do giro e acomoda no ajuste exato
-                val mergulho = minOf(ajuste.value, alvoAjuste) * 0.88f
-                ajuste.animateTo(alvoAjuste, keyframes { durationMillis = 520; mergulho at 220 })
-            } else {
-                rotacao.snapTo(giro * 90f)
-                ajuste.snapTo(alvoAjuste)
-            }
-        }
-
-        fun alternarZoom() {
-            escopo.launch {
+        /** Anima até [alvo]; com [foco], o ponto tocado fica parado ao ampliar. Voltar a 1x centraliza a foto. */
+        fun animarZoom(alvo: Float, foco: Offset?) {
+            animacaoZoom[0]?.cancel()
+            animacaoZoom[0] = escopo.launch {
                 val inicio = escala
-                val alvo = if (inicio > 1.05f) 1f else 2.5f
                 val inicioDesloc = deslocamento
+                val fim = if (alvo <= 1f) Offset.Zero
+                else if (foco != null) deslocamentoParaFoco(foco, inicioDesloc, inicio, alvo, w, h)
+                else inicioDesloc
                 animate(0f, 1f, animationSpec = spring(dampingRatio = 0.9f, stiffness = 260f)) { t, _ ->
                     escala = inicio + (alvo - inicio) * t
-                    deslocamento = if (alvo == 1f) Offset(inicioDesloc.x * (1 - t), inicioDesloc.y * (1 - t)) else Offset.Zero
+                    deslocamento = inicioDesloc + (fim - inicioDesloc) * t
                 }
                 if (ehAtual) aoZoom(alvo > 1f)
             }
         }
 
+        fun arrastar() {
+            val cor = CoresMidia.obter(f.id)?.toArgb() ?: android.graphics.Color.DKGRAY
+            iniciarArrasto(view, f, miniaturaPequena(carregada[0]), cor)
+        }
+
         Box(Modifier.fillMaxSize()) {
             Box(
                 Modifier.fillMaxSize()
-                    .pointerInput(Unit) {
+                    .pointerInput(w, h) {
                         awaitEachGesture {
-                            awaitFirstDown(requireUnconsumed = false)
-                            do {
-                                val evento = awaitPointerEvent()
-                                val toques = evento.changes.count { it.pressed }
-                                if (toques >= 2 || escala > 1f) {
-                                    val zoom = evento.calculateZoom()
-                                    val pan = evento.calculatePan()
-                                    val nova = (escala * zoom).coerceIn(1f, 6f)
-                                    val lx = w * (nova - 1f) / 2f
-                                    val ly = h * (nova - 1f) / 2f
-                                    deslocamento = if (nova <= 1f) {
-                                        Offset.Zero
-                                    } else {
-                                        Offset(
-                                            (deslocamento.x + pan.x).coerceIn(-lx, lx),
-                                            (deslocamento.y + pan.y).coerceIn(-ly, ly),
-                                        )
+                            tratarPinca(
+                                w, h, 6f,
+                                escala = { escala },
+                                deslocamento = { deslocamento },
+                                aplicar = { e, d -> animacaoZoom[0]?.cancel(); escala = e; deslocamento = d },
+                                aoMudarZoom = { if (ehAtual) aoZoom(it) },
+                                aoSoltar = {
+                                    if (escala < 1f) {
+                                        animarZoom(1f, null) // zoom out elástico: volta ao tamanho normal
+                                    } else if (escala <= 1.02f) {
+                                        escala = 1f
+                                        deslocamento = Offset.Zero
+                                        if (ehAtual) aoZoom(false)
                                     }
-                                    escala = nova
-                                    if (ehAtual) aoZoom(escala > 1f)
-                                    evento.changes.forEach { if (it.positionChanged()) it.consume() }
-                                }
-                            } while (evento.changes.any { it.pressed })
-                            if (escala <= 1.02f) {
-                                escala = 1f
-                                deslocamento = Offset.Zero
-                                if (ehAtual) aoZoom(false)
-                            }
+                                },
+                            )
                         }
                     }
-                    .pointerInput(Unit) {
-                        detectTapGestures(onTap = { aoTocar() }, onDoubleTap = { alternarZoom() })
+                    .pointerInput(w, h) {
+                        detectTapGestures(
+                            onTap = { aoTocar() },
+                            // toque duplo: amplia no ponto tocado; com a foto ampliada, volta ao tamanho normal
+                            onDoubleTap = { toque -> animarZoom(if (escala > 1.05f) 1f else 2.5f, toque) },
+                            onLongPress = { arrastar() },
+                        )
                     }
                     .graphicsLayer {
-                        scaleX = escala * ajuste.value
-                        scaleY = escala * ajuste.value
+                        scaleX = escala
+                        scaleY = escala
                         translationX = deslocamento.x
                         translationY = deslocamento.y
-                        rotationZ = rotacao.value
                     },
                 contentAlignment = Alignment.Center,
             ) {
@@ -844,45 +942,50 @@ private fun PaginaFoto(
                         .efeitoFechar(progresso, encolher, inclinar)
                         .clip(if (compartilhar) RoundedCornerShape(raio) else RectangleShape),
                 ) {
-                val original = ImageRequest.Builder(ctx)
-                    .data(arquivoLocal ?: "https://www.googleapis.com/drive/v3/files/${f.id}?alt=media")
-                    .apply { if (token != null) addHeader("Authorization", "Bearer $token") }
-                    .size(2400, 2400)
-                    .emLoop() // GIFs e imagens animadas repetem enquanto a tela estiver aberta
-                    .crossfade(true)
-                    .build()
-                SubcomposeAsyncImage(
-                    model = original,
-                    contentDescription = f.name,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = if (razao != null) ContentScale.Crop else ContentScale.Fit,
-                    onSuccess = { s ->
-                        val tam = s.painter.intrinsicSize
-                        if (tam.isSpecified && tam.width > 0f && tam.height > 0f) proporcao = tam.width / tam.height
-                    },
-                    loading = {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            if (f.thumbnailLink != null) {
-                                val miniatura = ImageRequest.Builder(ctx)
-                                    .data(f.thumbnailLink)
-                                    .apply { if (token != null) addHeader("Authorization", "Bearer $token") }
-                                    .build()
-                                AsyncImage(
-                                    miniatura, null, Modifier.fillMaxSize(),
-                                    contentScale = if (razao != null) ContentScale.Crop else ContentScale.Fit,
-                                )
+                    val original = ImageRequest.Builder(ctx)
+                        .data(arquivoLocal ?: "https://www.googleapis.com/drive/v3/files/${f.id}?alt=media")
+                        .apply { if (token != null) addHeader("Authorization", "Bearer $token") }
+                        .size(2400, 2400)
+                        .emLoop() // GIFs e imagens animadas repetem enquanto a tela estiver aberta
+                        .crossfade(true)
+                        .build()
+                    SubcomposeAsyncImage(
+                        model = original,
+                        contentDescription = f.name,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = if (razao != null) ContentScale.Crop else ContentScale.Fit,
+                        onSuccess = { s ->
+                            carregada[0] = s.result.drawable
+                            val tam = s.painter.intrinsicSize
+                            if (tam.isSpecified && tam.width > 0f && tam.height > 0f) proporcao = tam.width / tam.height
+                        },
+                        loading = {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                if (f.thumbnailLink != null) {
+                                    val miniatura = ImageRequest.Builder(ctx)
+                                        .data(f.thumbnailLink)
+                                        .apply { if (token != null) addHeader("Authorization", "Bearer $token") }
+                                        .build()
+                                    AsyncImage(
+                                        miniatura, null, Modifier.fillMaxSize(),
+                                        contentScale = if (razao != null) ContentScale.Crop else ContentScale.Fit,
+                                        onSuccess = { carregada[0] = it.result.drawable },
+                                    )
+                                }
+                                CircularProgressIndicator(Modifier.size(32.dp), color = Color.White)
                             }
-                            CircularProgressIndicator(Modifier.size(32.dp), color = Color.White)
-                        }
-                    },
-                )
+                        },
+                    )
                 }
             }
         }
     }
 }
 
-/** Página de um vídeo: miniatura até o player ficar pronto; só o vídeo ativo tem player e gestos. */
+/**
+ * Página de um vídeo: miniatura até o player ficar pronto; só o vídeo ativo tem player e gestos.
+ * Segurar: velocidade turbo; continuar segurando por mais um instante leva o vídeo para outro app (arrastar e soltar).
+ */
 @OptIn(ExperimentalSharedTransitionApi::class, UnstableApi::class)
 @Composable
 private fun PaginaVideo(
@@ -899,9 +1002,13 @@ private fun PaginaVideo(
     aoTocar: () -> Unit,
 ) {
     val ctx = LocalContext.current
+    val view = LocalView.current
     val escopo = rememberCoroutineScope()
     var escala by remember { mutableFloatStateOf(1f) }
     var deslocamento by remember { mutableStateOf(Offset.Zero) }
+    val miniaturaCarregada = remember { arrayOfNulls<Drawable>(1) }
+    val animacaoZoom = remember { arrayOfNulls<Job>(1) }
+    val tarefaArrasto = remember { arrayOfNulls<Job>(1) }
 
     val raio by av.transition.animateDp(
         transitionSpec = { tween(if (targetState == EnterExitState.Visible) 500 else TempoGaleria.voltaMs, easing = CurvaIOS) },
@@ -922,70 +1029,76 @@ private fun PaginaVideo(
             Modifier.fillMaxSize()
         }
 
-        fun alternarZoom() {
-            escopo.launch {
+        fun animarZoom(alvo: Float, foco: Offset?) {
+            animacaoZoom[0]?.cancel()
+            animacaoZoom[0] = escopo.launch {
                 val inicio = escala
-                val alvo = if (inicio > 1.05f) 1f else 2f
                 val inicioDesloc = deslocamento
+                val fim = if (alvo <= 1f) Offset.Zero
+                else if (foco != null) deslocamentoParaFoco(foco, inicioDesloc, inicio, alvo, w, h)
+                else inicioDesloc
                 animate(0f, 1f, animationSpec = spring(dampingRatio = 0.9f, stiffness = 260f)) { t, _ ->
                     escala = inicio + (alvo - inicio) * t
-                    deslocamento = if (alvo == 1f) Offset(inicioDesloc.x * (1 - t), inicioDesloc.y * (1 - t)) else Offset.Zero
+                    deslocamento = inicioDesloc + (fim - inicioDesloc) * t
                 }
                 aoZoom(alvo > 1f)
             }
+        }
+
+        fun arrastar() {
+            val cor = CoresMidia.obter(f.id)?.toArgb() ?: android.graphics.Color.DKGRAY
+            iniciarArrasto(view, f, miniaturaPequena(miniaturaCarregada[0]), cor)
         }
 
         val gestos = if (ctrl == null) {
             Modifier.pointerInput(Unit) { detectTapGestures(onTap = { aoTocar() }) }
         } else {
             Modifier
-                // pinça: zoom no vídeo (e arrastar quando ampliado)
-                .pointerInput(ctrl) {
+                // pinça: zoom no vídeo em volta dos dedos (e arrastar quando ampliado); abaixo de 1x volta ao soltar
+                .pointerInput(ctrl, w, h) {
                     awaitEachGesture {
-                        awaitFirstDown(requireUnconsumed = false)
-                        do {
-                            val evento = awaitPointerEvent()
-                            val toques = evento.changes.count { it.pressed }
-                            if (toques >= 2 || escala > 1f) {
-                                val zoom = evento.calculateZoom()
-                                val pan = evento.calculatePan()
-                                val nova = (escala * zoom).coerceIn(1f, 4f)
-                                val lx = w * (nova - 1f) / 2f
-                                val ly = h * (nova - 1f) / 2f
-                                deslocamento = if (nova <= 1f) {
-                                    Offset.Zero
-                                } else {
-                                    Offset(
-                                        (deslocamento.x + pan.x).coerceIn(-lx, lx),
-                                        (deslocamento.y + pan.y).coerceIn(-ly, ly),
-                                    )
+                        tratarPinca(
+                            w, h, 4f,
+                            escala = { escala },
+                            deslocamento = { deslocamento },
+                            aplicar = { e, d -> animacaoZoom[0]?.cancel(); escala = e; deslocamento = d },
+                            aoMudarZoom = { aoZoom(it) },
+                            aoSoltar = {
+                                if (escala < 1f) {
+                                    animarZoom(1f, null)
+                                } else if (escala <= 1.02f) {
+                                    escala = 1f
+                                    deslocamento = Offset.Zero
+                                    aoZoom(false)
                                 }
-                                escala = nova
-                                aoZoom(escala > 1f)
-                                evento.changes.forEach { if (it.positionChanged()) it.consume() }
-                            }
-                        } while (evento.changes.any { it.pressed })
-                        if (escala <= 1.02f) {
-                            escala = 1f
-                            deslocamento = Offset.Zero
-                            aoZoom(false)
-                        }
+                            },
+                        )
                     }
                 }
-                // toque: interface; segurar: 2x; toque duplo: laterais ±10 s e centro aplica/reduz o zoom
-                .pointerInput(ctrl) {
+                // toque: interface; segurar: turbo (e, segurando mais, arrastar para outro app);
+                // toque duplo: laterais ±salto e centro amplia no ponto tocado ou volta ao normal
+                .pointerInput(ctrl, w, h) {
                     detectTapGestures(
                         onPress = {
                             tryAwaitRelease()
                             ctrl.desligarTurbo()
+                            tarefaArrasto[0]?.cancel()
                         },
-                        onLongPress = { ctrl.ligarTurbo() },
+                        onLongPress = {
+                            ctrl.ligarTurbo()
+                            tarefaArrasto[0]?.cancel()
+                            tarefaArrasto[0] = escopo.launch {
+                                delay(1100)
+                                ctrl.desligarTurbo()
+                                arrastar()
+                            }
+                        },
                         onDoubleTap = { toque ->
                             val terco = size.width / 3f
                             when {
-                                toque.x < terco -> ctrl.pular(-10_000L)
-                                toque.x > 2 * terco -> ctrl.pular(10_000L)
-                                else -> alternarZoom()
+                                toque.x < terco -> ctrl.pular(-1)
+                                toque.x > 2 * terco -> ctrl.pular(1)
+                                else -> animarZoom(if (escala > 1.05f) 1f else 2f, toque)
                             }
                         },
                         onTap = { aoTocar() },
@@ -1018,6 +1131,7 @@ private fun PaginaVideo(
                     AsyncImage(
                         miniatura, null, Modifier.fillMaxSize(),
                         contentScale = if (razao != null) ContentScale.Crop else ContentScale.Fit,
+                        onSuccess = { miniaturaCarregada[0] = it.result.drawable },
                     )
                 }
                 if (ctrl != null) {

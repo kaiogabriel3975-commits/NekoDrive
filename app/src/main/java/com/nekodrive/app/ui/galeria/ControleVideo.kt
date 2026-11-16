@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -76,6 +77,12 @@ class ControleVideo(
 ) {
     val player: ExoPlayer = ExoPlayer.Builder(ctx)
         .setMediaSourceFactory(DefaultMediaSourceFactory(vm.midia.fabrica()))
+        // foco de áudio (para o som ceder a ligações e outros apps) e pausa ao desconectar o fone
+        .setAudioAttributes(
+            AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(),
+            true,
+        )
+        .setHandleAudioBecomingNoisy(true)
         .build()
     val cast = CastControle(ctx, vm.midia.servidor)
 
@@ -125,6 +132,18 @@ class ControleVideo(
                 }
             }
             if (state == Player.STATE_ENDED) salvarAgora()
+        }
+
+        /** Com "repetir" ligado, o fim do vídeo vira uma volta ao início: grava como assistido antes de recomeçar. */
+        override fun onPositionDiscontinuity(
+            oldPosition: Player.PositionInfo,
+            newPosition: Player.PositionInfo,
+            reason: Int,
+        ) {
+            if (reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION) {
+                val d = player.duration
+                if (d > 0) vm.salvarProgresso(arquivo, d, d)
+            }
         }
 
         override fun onVideoSizeChanged(size: VideoSize) {
@@ -182,6 +201,7 @@ class ControleVideo(
             // sem acesso ao estado da rede: mantém a resolução como está
         }
         player.addListener(ouvinte)
+        player.repeatMode = if (vm.repetirVideo) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
         // As legendas começam desligadas; o usuário escolhe no menu
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
@@ -208,7 +228,7 @@ class ControleVideo(
         val item = montarItem(API + arquivo.id + "?alt=media", vm.chaveCache(arquivo))
         val antes = vm.progresso(arquivo)
         player.setMediaItem(item)
-        if (antes != null && antes.posicaoMs > 5_000 && antes.posicaoMs < antes.duracaoMs * 0.9) {
+        if (vm.retomarVideo && antes != null && antes.posicaoMs > 5_000 && antes.posicaoMs < antes.duracaoMs * 0.9) {
             player.seekTo(antes.posicaoMs)
         }
         player.prepare()
@@ -234,17 +254,26 @@ class ControleVideo(
 
     // ---------- controles ----------
 
-    fun alternar() { if (player.isPlaying) player.pause() else player.play() }
+    fun alternar() {
+        if (player.isPlaying) {
+            player.pause()
+        } else {
+            // depois do fim (sem repetir), tocar de novo começa do início
+            if (player.playbackState == Player.STATE_ENDED) player.seekToDefaultPosition()
+            player.play()
+        }
+    }
 
     fun buscar(ms: Long) {
         player.seekTo(ms.coerceIn(0L, maxOf(duracao, 0L)))
         posicao = player.currentPosition
     }
 
-    /** Toque duplo: avança ou volta 10 s e mostra a mensagem. */
-    fun pular(deltaMs: Long) {
-        buscar(player.currentPosition + deltaMs)
-        mostrarMensagem(if (deltaMs < 0) "- 10 segundos" else "+ 10 segundos")
+    /** Toque duplo: avança ([sentido] = 1) ou volta (-1) o tempo definido nos ajustes e mostra a mensagem. */
+    fun pular(sentido: Int) {
+        val s = vm.saltoSeg
+        buscar(player.currentPosition + sentido * s * 1000L)
+        mostrarMensagem(if (sentido < 0) "- $s segundos" else "+ $s segundos")
     }
 
     fun definirVelocidade(v: Float) {
@@ -254,8 +283,9 @@ class ControleVideo(
 
     fun ligarTurbo() {
         turbo = true
-        player.setPlaybackSpeed(2f)
-        mostrarMensagem("Velocidade 2x")
+        val v = vm.velocidadeTurbo
+        player.setPlaybackSpeed(v)
+        mostrarMensagem("Velocidade " + (if (v % 1f == 0f) v.roundToInt().toString() else String.format(Locale.getDefault(), "%.1f", v)) + "x")
     }
 
     fun desligarTurbo() {
@@ -352,10 +382,10 @@ class ControleVideo(
         aplicarPolitica()
     }
 
-    /** Padrão: até 1080p no Wi-Fi e até 540p (ou a mais próxima abaixo) nos dados móveis. Só vale sem escolha manual. */
+    /** Padrão: até a resolução dos ajustes no Wi-Fi (1080p) e nos dados móveis (540p), ou a mais próxima abaixo. Só vale sem escolha manual. */
     private fun aplicarPolitica() {
         if (!qualidadeAutomatica || qualidades.isEmpty()) return
-        val alvo = if (redeWifi) 1080 else 540
+        val alvo = if (redeWifi) vm.resWifi else vm.resMovel
         val escolha = qualidades.filter { it.altura <= alvo }.maxByOrNull { it.altura }
             ?: qualidades.minByOrNull { it.altura } ?: return
         if (escolha !== qualidadeAtual) trocarPara(escolha)
