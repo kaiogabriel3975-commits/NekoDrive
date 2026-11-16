@@ -57,7 +57,7 @@ fun miniaturaPequena(d: Drawable?): Bitmap? {
  * Começa o arrastar e soltar do sistema com a foto ou o vídeo. Funciona com o dedo ainda na tela e leva o
  * arquivo para apps que estejam em tela dividida ou janela flutuante.
  */
-fun iniciarArrasto(view: View, f: DriveFile, miniatura: Bitmap?, cor: Int): Boolean {
+fun iniciarArrasto(view: View, f: DriveFile, miniatura: Bitmap?, cor: Int, vibrar: Boolean = true): Boolean {
     val ctx = view.context
     val clip = ClipData.newUri(ctx.contentResolver, f.name, ProvedorMidia.uriDe(ctx, f))
     val ok = view.startDragAndDrop(
@@ -66,6 +66,6 @@ fun iniciarArrasto(view: View, f: DriveFile, miniatura: Bitmap?, cor: Int): Bool
         null,
         View.DRAG_FLAG_GLOBAL or View.DRAG_FLAG_GLOBAL_URI_READ,
     )
-    if (ok) view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+    if (ok && vibrar) view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
     return ok
 }
