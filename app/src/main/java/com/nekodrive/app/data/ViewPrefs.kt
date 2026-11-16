@@ -37,9 +37,9 @@ class ViewPrefs(context: Context) {
         get() = p.getBoolean("vidro", true)
         set(v) { p.edit().putBoolean("vidro", v).apply() }
 
-    /** Tamanho das miniaturas: 0 pequenas, 1 médias, 2 grandes. */
+    /** Tamanho das miniaturas: 1 médias, 2 grandes (o antigo 0 "pequenas" foi removido e vale como médias). */
     var miniatura: Int
-        get() = p.getInt("miniatura", 1)
+        get() = p.getInt("miniatura", 1).coerceAtLeast(1)
         set(v) { p.edit().putInt("miniatura", v).apply() }
 
     var repetirVideo: Boolean
@@ -78,6 +78,51 @@ class ViewPrefs(context: Context) {
     var esperaFecharMs: Int
         get() = p.getInt("esperaFecharMs", 100)
         set(v) { p.edit().putInt("esperaFecharMs", v).apply() }
+
+    /** GIFs animam nas miniaturas (desligado: só o primeiro quadro). */
+    var animarGifs: Boolean
+        get() = p.getBoolean("animarGifs", true)
+        set(v) { p.edit().putBoolean("animarGifs", v).apply() }
+
+    /** Colunas da grade: 0 = automático (pelo tamanho das miniaturas), ou 2, 3 ou 4. */
+    var colunas: Int
+        get() = p.getInt("colunas", 0)
+        set(v) { p.edit().putInt("colunas", v).apply() }
+
+    /** Intensidade do blur do vidro: 0 baixa, 1 média, 2 alta. */
+    var blurIntensidade: Int
+        get() = p.getInt("blurIntensidade", 1)
+        set(v) { p.edit().putInt("blurIntensidade", v).apply() }
+
+    /** Reflexos sutis no contorno das pílulas da galeria. */
+    var reflexoPilula: Boolean
+        get() = p.getBoolean("reflexoPilula", true)
+        set(v) { p.edit().putBoolean("reflexoPilula", v).apply() }
+
+    /** Pastas sempre antes dos arquivos na ordenação. */
+    var pastasPrimeiro: Boolean
+        get() = p.getBoolean("pastasPrimeiro", true)
+        set(v) { p.edit().putBoolean("pastasPrimeiro", v).apply() }
+
+    /** Nomes de fotos e vídeos nos cards da grade. */
+    var mostrarNomes: Boolean
+        get() = p.getBoolean("mostrarNomes", true)
+        set(v) { p.edit().putBoolean("mostrarNomes", v).apply() }
+
+    /** Miniaturas novas só são baixadas no Wi-Fi; nos dados móveis aparecem só as que já estão guardadas. */
+    var miniaturasSoWifi: Boolean
+        get() = p.getBoolean("miniaturasSoWifi", false)
+        set(v) { p.edit().putBoolean("miniaturasSoWifi", v).apply() }
+
+    /** Vibração ao segurar um item ou arrastar uma foto. */
+    var vibrar: Boolean
+        get() = p.getBoolean("vibrar", true)
+        set(v) { p.edit().putBoolean("vibrar", v).apply() }
+
+    /** Animações: 0 normais, 1 baratas para a GPU, 2 sem animações. */
+    var animacoes: Int
+        get() = p.getInt("animacoes", 0)
+        set(v) { p.edit().putInt("animacoes", v).apply() }
 
     var pediuNotificacao: Boolean
         get() = p.getBoolean("pediuNotificacao", false)
