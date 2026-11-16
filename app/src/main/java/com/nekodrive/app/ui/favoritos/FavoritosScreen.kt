@@ -23,7 +23,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.AlertDialog
@@ -51,6 +53,8 @@ import com.nekodrive.app.ui.drive.DriveViewModel
 import com.nekodrive.app.ui.drive.ItemGrade
 import com.nekodrive.app.ui.drive.ItemLinha
 import com.nekodrive.app.ui.fonteVidro
+import com.nekodrive.app.ui.DialogRenomear
+import com.nekodrive.app.ui.drive.larguraMiniatura
 import com.nekodrive.app.ui.galeria.BotaoVidro
 import com.nekodrive.app.ui.galeria.CirculoVidro
 import com.nekodrive.app.ui.galeria.PilulaVidro
@@ -68,6 +72,7 @@ fun FavoritosScreen(
     aoAbrirPasta: (DriveFile) -> Unit,
 ) {
     var confirmar by remember { mutableStateOf(false) }
+    var renomear by remember { mutableStateOf<DriveFile?>(null) }
     var alturaTopo by remember { mutableStateOf(0.dp) }
     BackHandler(enabled = vm.selecionados.isNotEmpty()) { vm.limparSelecao() }
     LaunchedEffect(vm.contaAtual?.email) { vm.carregarFavoritos() }
@@ -88,7 +93,7 @@ fun FavoritosScreen(
             CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
                 if (vm.grade) {
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(110.dp),
+                        columns = GridCells.Adaptive(larguraMiniatura(vm.tamanhoMiniatura)),
                         state = vm.estadoGrade(CHAVE),
                         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = topo + alturaTopo + 12.dp, bottom = base + 12.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -138,16 +143,19 @@ fun FavoritosScreen(
                     CirculoVidro(aoClicar = { vm.limparSelecao() }) { Icon(Icons.Rounded.Close, "Cancelar seleção", tint = cor) }
                     PilulaVidro {
                         Text(
-                            "${vm.selecionados.size} selecionado(s)",
+                            "${vm.selecionados.size}",
                             Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                            style = MaterialTheme.typography.titleSmall,
+                            style = MaterialTheme.typography.titleMedium,
                             color = cor,
                         )
                     }
                     Spacer(Modifier.weight(1f))
+                    val unico = if (vm.selecionados.size == 1) lista.firstOrNull { it.id in vm.selecionados } else null
                     PilulaVidro {
                         BotaoVidro(Icons.Rounded.Star, "Remover dos favoritos", { vm.favoritarSelecao(lista) }, cor)
                         BotaoVidro(Icons.Rounded.Download, "Baixar", { vm.baixarSelecionados() }, cor)
+                        if (unico != null) BotaoVidro(Icons.Rounded.Edit, "Renomear", { renomear = unico }, cor)
+                        if (unico != null && unico.isFolder) BotaoVidro(Icons.Rounded.AddPhotoAlternate, "Definir capa", { vm.abrirSeletorCapa(unico) }, cor)
                         BotaoVidro(Icons.Rounded.Delete, "Mover para a lixeira", { confirmar = true }, cor)
                     }
                 } else {
@@ -181,6 +189,14 @@ fun FavoritosScreen(
                 }
             }
         }
+    }
+
+    renomear?.let { f ->
+        DialogRenomear(
+            nomeAtual = f.name,
+            aoConfirmar = { novo -> renomear = null; vm.renomear(f, novo) { vm.limparSelecao() } },
+            aoCancelar = { renomear = null },
+        )
     }
 
     if (confirmar) {
