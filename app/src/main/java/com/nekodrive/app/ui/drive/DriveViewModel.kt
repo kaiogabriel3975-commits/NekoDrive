@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.nekodrive.app.ui.Animacoes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nekodrive.app.data.AppContainer
@@ -98,6 +99,15 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     var resMovel by mutableIntStateOf(c.prefs.resMovel); private set
     var controlesMs by mutableIntStateOf(c.prefs.controlesMs); private set
     var esperaFecharMs by mutableIntStateOf(c.prefs.esperaFecharMs); private set
+    var animarGifs by mutableStateOf(c.prefs.animarGifs); private set
+    var colunas by mutableIntStateOf(c.prefs.colunas); private set
+    var blurIntensidade by mutableIntStateOf(c.prefs.blurIntensidade); private set
+    var reflexoPilula by mutableStateOf(c.prefs.reflexoPilula); private set
+    var pastasPrimeiro by mutableStateOf(c.prefs.pastasPrimeiro); private set
+    var mostrarNomes by mutableStateOf(c.prefs.mostrarNomes); private set
+    var miniaturasSoWifi by mutableStateOf(c.prefs.miniaturasSoWifi); private set
+    var vibrar by mutableStateOf(c.prefs.vibrar); private set
+    var animacoes by mutableIntStateOf(c.prefs.animacoes); private set
     val tema: Int get() = c.prefs.tema
 
     fun definirTema(v: Int) { c.prefs.tema = v }
@@ -111,6 +121,20 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     fun definirResMovel(v: Int) { resMovel = v; c.prefs.resMovel = v }
     fun definirControlesMs(v: Int) { controlesMs = v; c.prefs.controlesMs = v }
     fun definirEsperaFechar(v: Int) { esperaFecharMs = v; c.prefs.esperaFecharMs = v; TempoGaleria.esperaMs = v }
+    fun definirAnimarGifs(v: Boolean) { animarGifs = v; c.prefs.animarGifs = v }
+    fun definirColunas(v: Int) { colunas = v; c.prefs.colunas = v }
+    fun definirBlurIntensidade(v: Int) { blurIntensidade = v; c.prefs.blurIntensidade = v }
+    fun definirReflexoPilula(v: Boolean) { reflexoPilula = v; c.prefs.reflexoPilula = v }
+    fun definirMostrarNomes(v: Boolean) { mostrarNomes = v; c.prefs.mostrarNomes = v }
+    fun definirMiniaturasSoWifi(v: Boolean) { miniaturasSoWifi = v; c.prefs.miniaturasSoWifi = v }
+    fun definirVibrar(v: Boolean) { vibrar = v; c.prefs.vibrar = v }
+    fun definirAnimacoes(v: Int) { animacoes = v; c.prefs.animacoes = v; Animacoes.modo = v }
+    fun definirPastasPrimeiro(v: Boolean) {
+        pastasPrimeiro = v
+        c.prefs.pastasPrimeiro = v
+        cache.clear()
+        if (buscando) definirTermo(termo) else recarregar()
+    }
 
     val pediuNotificacao: Boolean get() = c.prefs.pediuNotificacao
     fun marcarPediuNotificacao() { c.prefs.pediuNotificacao = true }
@@ -177,6 +201,7 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
 
     init {
         TempoGaleria.esperaMs = c.prefs.esperaFecharMs
+        Animacoes.modo = c.prefs.animacoes
         contaAtual = contas.firstOrNull { it.email == c.accounts.currentEmail } ?: contas.firstOrNull()
         c.midia.definirConta(contaAtual?.email)
         recarregarFavoritosLocais()
@@ -200,7 +225,7 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
             "'${pilha.last().id}' in parents and trashed = false"
         }
 
-    private fun ordenacao(): String = "folder," + campo.chaveApi + if (crescente) "" else " desc"
+    private fun ordenacao(): String = (if (pastasPrimeiro) "folder," else "") + campo.chaveApi + if (crescente) "" else " desc"
 
     private fun chave(id: String) = "${contaAtual?.email}|$id"
 
