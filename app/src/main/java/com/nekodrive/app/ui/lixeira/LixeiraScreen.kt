@@ -45,6 +45,7 @@ import com.nekodrive.app.ui.FaixaVidro
 import com.nekodrive.app.ui.IndicadorAtualizar
 import com.nekodrive.app.ui.drive.DriveViewModel
 import com.nekodrive.app.ui.drive.ItemLinha
+import com.nekodrive.app.ui.drive.ladoMiniaturaLista
 import com.nekodrive.app.ui.fonteVidro
 import com.nekodrive.app.ui.galeria.BotaoVidro
 import com.nekodrive.app.ui.galeria.CirculoVidro
@@ -85,6 +86,7 @@ fun LixeiraScreen(
                         ItemLinha(
                             f, vm.token, f.id in vm.selecionados, vm.estadoDe(f), st, av, av,
                             { vm.alternarSelecao(f) }, { vm.alternarSelecao(f) },
+                            ladoMiniatura = ladoMiniaturaLista(vm.tamanhoMiniatura),
                         )
                     }
                     if (vm.temMaisLixeira) {
