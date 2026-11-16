@@ -85,7 +85,7 @@ class Rebote(
                 aoAtualizar()
             }
             val alvo = if (atualizando && deslocamento > 0f) limiar * 0.7f else 0f
-            animate(deslocamento, alvo, animationSpec = spring(dampingRatio = 0.55f, stiffness = 220f)) { v, _ ->
+            animate(deslocamento, alvo, animationSpec = Animacoes.espec(spring(dampingRatio = 0.55f, stiffness = 220f), spring(dampingRatio = 1f, stiffness = 400f))) { v, _ ->
                 deslocamento = v
             }
         }
@@ -129,7 +129,7 @@ fun IndicadorAtualizar(rebote: Rebote, modifier: Modifier = Modifier) {
         rebote.deslocamento > 6f -> 0.35f + 0.65f * progresso
         else -> 0f
     }
-    val escala by animateFloatAsState(alvo, spring(dampingRatio = 0.55f, stiffness = 260f), label = "indicador")
+    val escala by animateFloatAsState(alvo, Animacoes.espec(spring(dampingRatio = 0.55f, stiffness = 260f), spring(dampingRatio = 1f, stiffness = 400f)), label = "indicador")
     if (escala > 0.01f) {
         Box(
             modifier
