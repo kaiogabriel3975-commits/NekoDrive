@@ -21,6 +21,7 @@ class MainActivity : FragmentActivity() {
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
         window.navigationBarDividerColor = Color.TRANSPARENT
-        setContent { NekoDriveTheme { NekoDriveApp() } }
+        val container = (application as NekoDriveApplication).container
+        setContent { NekoDriveTheme(container.prefs.tema) { NekoDriveApp() } }
     }
 }
