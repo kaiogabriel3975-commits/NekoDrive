@@ -1,5 +1,6 @@
 package com.nekodrive.app.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -7,6 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.ColorFilter
@@ -23,9 +25,18 @@ import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 
 /** Estado e estilo do efeito de vidro (desfoque do que passa por baixo das barras). */
-class Vidro(val estado: HazeState, val estilo: HazeStyle, val estiloCabecalho: HazeStyle = estilo)
+class Vidro(
+    val estado: HazeState,
+    val estilo: HazeStyle,
+    val estiloCabecalho: HazeStyle = estilo,
+    /** Cor usada no lugar do blur quando o efeito de vidro está desligado nos ajustes. */
+    val fundoSolido: Color = Color.DarkGray,
+)
 
 val LocalVidro = staticCompositionLocalOf<Vidro?> { null }
+
+/** Falso quando o usuário desliga o efeito de vidro (blur) nos ajustes. */
+val LocalVidroAtivo = staticCompositionLocalOf { true }
 
 private val FILTRO_SATURACAO = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(1.35f) })
 
@@ -43,6 +54,7 @@ fun Modifier.saturar(): Modifier = this.drawWithContent {
 @Composable
 fun Modifier.vidro(): Modifier {
     val v = LocalVidro.current ?: return this
+    if (!LocalVidroAtivo.current) return this.background(v.fundoSolido.copy(alpha = 0.85f))
     return this.saturar().hazeEffect(state = v.estado, style = v.estilo) {
         blurEnabled = true // o Haze deixa o blur desligado no Android 12 por padrão
     }
@@ -52,6 +64,7 @@ fun Modifier.vidro(): Modifier {
 @Composable
 fun Modifier.vidroGradiente(): Modifier {
     val v = LocalVidro.current ?: return this
+    if (!LocalVidroAtivo.current) return this
     return this.saturar().hazeEffect(state = v.estado, style = v.estiloCabecalho) {
         blurEnabled = true
         progressive = HazeProgressive.verticalGradient(startIntensity = 1f, endIntensity = 0f)

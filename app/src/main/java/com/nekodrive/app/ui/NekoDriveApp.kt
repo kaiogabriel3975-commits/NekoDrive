@@ -93,6 +93,8 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.nekodrive.app.NekoDriveApplication
 import com.nekodrive.app.ui.drive.ContasSheet
+import com.nekodrive.app.ui.drive.DialogDownloadPasta
+import com.nekodrive.app.ui.drive.SeletorCapa
 import com.nekodrive.app.ui.drive.DriveScreen
 import com.nekodrive.app.ui.drive.DriveViewModel
 import com.nekodrive.app.ui.drive.FotosAbertas
@@ -140,7 +142,7 @@ fun NekoDriveApp() {
         blurRadius = 28.dp,
         noiseFactor = 0f,
     )
-    val vidroCtx = remember(vidroEstado, vidroEstilo, vidroCabecalho) { Vidro(vidroEstado, vidroEstilo, vidroCabecalho) }
+    val vidroCtx = remember(vidroEstado, vidroEstilo, vidroCabecalho, corVidro) { Vidro(vidroEstado, vidroEstilo, vidroCabecalho, corVidro) }
 
     // 1) tela de consentimento do Google (quando necessária)
     val consentimento = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
@@ -203,6 +205,7 @@ fun NekoDriveApp() {
 
     CompositionLocalProvider(
         LocalVidro provides vidroCtx,
+        LocalVidroAtivo provides vm.vidroAtivo,
         LocalMarqueePausado provides (vm.visualizador != null || congelarNomes),
     ) {
         Surface(
@@ -258,6 +261,8 @@ fun NekoDriveApp() {
         )
     }
     if (vm.detalhes != null) InfoSheet(vm)
+    vm.planoDownload?.let { DialogDownloadPasta(vm, it) }
+    if (vm.pastaDaCapa != null) SeletorCapa(vm)
     if (mostrarConfig) {
         ConfiguracoesSheet(vm, onContas = { mostrarContas = true }, onFechar = { mostrarConfig = false })
     }

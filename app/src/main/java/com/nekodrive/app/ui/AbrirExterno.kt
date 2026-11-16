@@ -53,6 +53,7 @@ fun abrirPlayerExterno(ctx: Context, vm: DriveViewModel, f: DriveFile) {
         val chave = servidor.registrar(vm.midia.urlOriginal(f.id), f.mimeType.ifEmpty { "video/*" })
         val intent = Intent(Intent.ACTION_VIEW)
             .setDataAndType(Uri.parse("http://127.0.0.1:${servidor.porta}/v/$chave"), f.mimeType.ifEmpty { "video/*" })
+            .putExtra("title", f.name)
         ctx.startActivity(Intent.createChooser(intent, "Abrir com o player"))
     } catch (e: ActivityNotFoundException) {
         Toast.makeText(ctx, "Nenhum player instalado consegue abrir este vídeo.", Toast.LENGTH_LONG).show()
