@@ -18,6 +18,7 @@ class AppContainer(context: Context) {
     val prefs = ViewPrefs(context)
     val playback = PlaybackStore(context)
     val favoritos = FavoritosStore(context)
+    val capas = CapasStore(context)
     val cacheDir: File = context.cacheDir
     val resolver: ContentResolver = context.contentResolver
     val auth = AuthManager(context)
