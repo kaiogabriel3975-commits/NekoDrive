@@ -51,12 +51,13 @@ fun NomeUmaLinha(
     val excede = larguraCaixa > 0 && larguraTexto > larguraCaixa
     // O texto surge com um fade rápido (por exemplo, ao trocar entre grade e lista)
     val opacidade = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { opacidade.animateTo(1f, tween(140)) }
+    LaunchedEffect(Unit) { opacidade.animateTo(1f, Animacoes.espec(tween(140), tween(100))) }
     val intervalo = with(densidade) { 32.dp.toPx() }
     val ciclo = larguraTexto + intervalo
 
-    LaunchedEffect(excede, pausado, texto, ciclo) {
-        if (excede && !pausado) {
+    LaunchedEffect(excede, pausado, texto, ciclo, Animacoes.modo) {
+        if (Animacoes.sem) deslocamento = 0f // sem animações: nomes longos ficam parados
+        if (excede && !pausado && !Animacoes.sem) {
             val passo = with(densidade) { 38.dp.toPx() } / QUADROS_POR_SEGUNDO
             if (deslocamento == 0f) delay(1200)
             while (true) {
