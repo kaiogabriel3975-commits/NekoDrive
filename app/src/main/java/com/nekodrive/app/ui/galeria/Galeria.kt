@@ -149,6 +149,8 @@ import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import com.nekodrive.app.data.drive.DriveFile
+import com.nekodrive.app.ui.Animacoes
+import com.nekodrive.app.ui.LocalVibrar
 import com.nekodrive.app.ui.LocalVidro
 import com.nekodrive.app.ui.NomeUmaLinha
 import com.nekodrive.app.ui.Vidro
@@ -251,15 +253,15 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
     var abriu by remember { mutableStateOf(false) }
     var fechando by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        launch { aparecer.animateTo(1f, tween(280)) }
-        delay(240)
+        launch { aparecer.animateTo(1f, Animacoes.espec(tween(280), tween(120))) }
+        delay(Animacoes.ms(240).toLong())
         abriu = true
     }
     DisposableEffect(Unit) { onDispose { TempoGaleria.fechando = false } }
     // a mídia diminui com mola atrás do arrasto (e volta com mola ao soltar)
     LaunchedEffect(Unit) {
         snapshotFlow { progresso.value }.collectLatest { q ->
-            encolher.animateTo(q, spring(dampingRatio = 0.8f, stiffness = 170f))
+            encolher.animateTo(q, Animacoes.espec(spring(dampingRatio = 0.8f, stiffness = 170f), tween(100)))
         }
     }
 
@@ -270,17 +272,20 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
         // Duração da volta: 350 ms ao fechar por botão; quanto mais longe e mais rápido o deslize, mais curta
         val longe = progresso.value
         val rapidez = (velocidade / 3500f).coerceIn(0f, 1f)
-        val ms = (350f * (1f - 0.35f * longe) * (1f - 0.30f * rapidez)).toInt().coerceIn(180, 350)
+        val ms = Animacoes.ms((350f * (1f - 0.35f * longe) * (1f - 0.30f * rapidez)).toInt().coerceIn(180, 350), barato = 180)
         TempoGaleria.voltaMs = ms
         TempoGaleria.fechando = true
         ctrlRef.value?.player?.pause() // ao soltar o dedo e começar a fechar, o vídeo pausa
         vm.fecharFoto()
         // a mídia volta em [ms] e fica mais 0,2 s sobre a miniatura antes da troca
-        scope.launch { aparecer.animateTo(0f, tween(ms + 100)) }
-        scope.launch { progresso.animateTo(0f, tween(minOf(ms, 300), easing = CurvaIOS)) }
-        scope.launch {
-            inclinar.animateTo(1f, tween((ms * 0.43f).toInt(), easing = FastOutSlowInEasing))
-            inclinar.animateTo(0f, tween((ms * 0.57f).toInt(), easing = CurvaIOS))
+        scope.launch { aparecer.animateTo(0f, Animacoes.espec(tween(ms + 100), tween(ms))) }
+        scope.launch { progresso.animateTo(0f, Animacoes.espec(tween(minOf(ms, 300), easing = CurvaIOS), tween(ms))) }
+        // a inclinação só existe nas animações normais (nas baratas e sem animações a mídia volta reta)
+        if (Animacoes.normais) {
+            scope.launch {
+                inclinar.animateTo(1f, tween((ms * 0.43f).toInt(), easing = FastOutSlowInEasing))
+                inclinar.animateTo(0f, tween((ms * 0.57f).toInt(), easing = CurvaIOS))
+            }
         }
     }
 
@@ -289,7 +294,7 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
     val vidroEstilo = HazeStyle(
         backgroundColor = Color.Black,
         tint = HazeTint(Color.Black.copy(alpha = 0.35f)),
-        blurRadius = 20.dp,
+        blurRadius = 20.dp * (when (vm.blurIntensidade) { 0 -> 0.5f; 2 -> 1.5f; else -> 1f }),
         noiseFactor = 0f,
     )
     val vidroLocal = remember(vidroEstado, vidroEstilo) { Vidro(vidroEstado, vidroEstilo, fundoSolido = Color.Black) }
@@ -461,7 +466,7 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                             if (progresso.value > 0.38f || velocidadeDedo > 2500f) {
                                 fechar(velocidadeDedo)
                             } else {
-                                progresso.animateTo(0f, spring(dampingRatio = 1f, stiffness = 300f))
+                                progresso.animateTo(0f, Animacoes.espec(spring(dampingRatio = 1f, stiffness = 300f), tween(120)))
                             }
                         },
                     ),
@@ -477,7 +482,7 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                             state = pager,
                             pagerSnapDistance = PagerSnapDistance.atMost(3),
                             decayAnimationSpec = rememberSplineBasedDecay(),
-                            snapAnimationSpec = spring(dampingRatio = 0.82f, stiffness = 260f),
+                            snapAnimationSpec = Animacoes.espec(spring(dampingRatio = 0.82f, stiffness = 260f), tween(150)),
                         ),
                         userScrollEnabled = !zoomado && !fechando,
                         key = { dados.fotos[it].id },
@@ -490,11 +495,11 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                                 val fracao = pager.currentPageOffsetFraction
                                 val parceiro = if (i == paginaAtual) paginaAtual + (if (fracao > 0f) 1 else -1) else paginaAtual
                                 val tipoDiferente = dados.fotos.getOrNull(parceiro)?.let { it.isVideo != f.isVideo } == true
-                                if (tipoDiferente) {
+                                if (tipoDiferente && !Animacoes.sem) {
                                     val d = abs(i - paginaAtual - fracao).coerceIn(0f, 1f)
                                     alpha = 1f - d
                                     val raio = d * 16.dp.toPx()
-                                    renderEffect = if (raio > 0.5f) BlurEffect(raio, raio, TileMode.Decal) else null
+                                    renderEffect = if (raio > 0.5f && Animacoes.normais) BlurEffect(raio, raio, TileMode.Decal) else null
                                 }
                             },
                         ) {
@@ -551,7 +556,7 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                     }
                 }
                 Dissolver(mostrarFoto, Modifier.align(Alignment.BottomCenter)) {
-                    PilulaVidro(Modifier.navigationBarsPadding().padding(bottom = 16.dp)) {
+                    PilulaVidro(Modifier.navigationBarsPadding().padding(bottom = 16.dp), reflexo = if (vm.reflexoPilula) (CoresMidia.obter(atual.id) ?: Color.White) else null) {
                         // GIFs não têm botão de copiar
                         if (!ehGif) BotaoVidro(Icons.Rounded.ContentCopy, "Copiar imagem", copiar)
                         BotaoVidro(Icons.Rounded.Share, "Compartilhar", compartilhar)
@@ -620,7 +625,7 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                             }
 
                             Box(Modifier.fillMaxWidth()) {
-                                PilulaVidro(Modifier.align(Alignment.Center)) {
+                                PilulaVidro(Modifier.align(Alignment.Center), reflexo = if (vm.reflexoPilula) (CoresMidia.obter(atual.id) ?: Color.White) else null) {
                                     BotaoVidro(
                                         if (estadoAtual.favorito) Icons.Rounded.Star else Icons.Rounded.StarBorder,
                                         if (estadoAtual.favorito) "Remover dos favoritos" else "Favoritar",
@@ -717,8 +722,8 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                 LaunchedEffect(msg) { if (msg != null) ultimaMsg = msg }
                 AnimatedVisibility(
                     visible = msg != null && !emPip,
-                    enter = fadeIn(tween(100)),
-                    exit = fadeOut(tween(100)),
+                    enter = Animacoes.entrada(fadeIn(tween(100))),
+                    exit = Animacoes.saida(fadeOut(tween(100))),
                     modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 12.dp),
                 ) {
                     Text(
@@ -847,6 +852,7 @@ private fun PaginaFoto(
 ) {
     val ctx = LocalContext.current
     val view = LocalView.current
+    val vibrar = LocalVibrar.current
     val escopo = rememberCoroutineScope()
     var escala by remember { mutableFloatStateOf(1f) }
     var deslocamento by remember { mutableStateOf(Offset.Zero) }
@@ -856,7 +862,12 @@ private fun PaginaFoto(
 
     // Cantos arredondados da miniatura viram cantos retos aos poucos (e o contrário ao fechar)
     val raio by av.transition.animateDp(
-        transitionSpec = { tween(if (targetState == EnterExitState.Visible) 500 else TempoGaleria.voltaMs, easing = CurvaIOS) },
+        transitionSpec = {
+            Animacoes.espec(
+                tween(if (targetState == EnterExitState.Visible) 500 else TempoGaleria.voltaMs, easing = CurvaIOS),
+                tween(if (targetState == EnterExitState.Visible) 250 else TempoGaleria.voltaMs, easing = CurvaIOS),
+            )
+        },
         label = "raio",
     ) {
         if (it == EnterExitState.Visible) 0.dp else 14.dp
@@ -885,7 +896,7 @@ private fun PaginaFoto(
                 val fim = if (alvo <= 1f) Offset.Zero
                 else if (foco != null) deslocamentoParaFoco(foco, inicioDesloc, inicio, alvo, w, h)
                 else inicioDesloc
-                animate(0f, 1f, animationSpec = spring(dampingRatio = 0.9f, stiffness = 260f)) { t, _ ->
+                animate(0f, 1f, animationSpec = Animacoes.espec(spring(dampingRatio = 0.9f, stiffness = 260f), tween(150))) { t, _ ->
                     escala = inicio + (alvo - inicio) * t
                     deslocamento = inicioDesloc + (fim - inicioDesloc) * t
                 }
@@ -895,7 +906,7 @@ private fun PaginaFoto(
 
         fun arrastar() {
             val cor = CoresMidia.obter(f.id)?.toArgb() ?: android.graphics.Color.DKGRAY
-            iniciarArrasto(view, f, miniaturaPequena(carregada[0]), cor)
+            iniciarArrasto(view, f, miniaturaPequena(carregada[0]), cor, vibrar)
         }
 
         Box(Modifier.fillMaxSize()) {
@@ -947,7 +958,7 @@ private fun PaginaFoto(
                         .apply { if (token != null) addHeader("Authorization", "Bearer $token") }
                         .size(2400, 2400)
                         .emLoop() // GIFs e imagens animadas repetem enquanto a tela estiver aberta
-                        .crossfade(true)
+                        .crossfade(!Animacoes.sem)
                         .build()
                     SubcomposeAsyncImage(
                         model = original,
@@ -1002,16 +1013,19 @@ private fun PaginaVideo(
     aoTocar: () -> Unit,
 ) {
     val ctx = LocalContext.current
-    val view = LocalView.current
     val escopo = rememberCoroutineScope()
     var escala by remember { mutableFloatStateOf(1f) }
     var deslocamento by remember { mutableStateOf(Offset.Zero) }
     val miniaturaCarregada = remember { arrayOfNulls<Drawable>(1) }
     val animacaoZoom = remember { arrayOfNulls<Job>(1) }
-    val tarefaArrasto = remember { arrayOfNulls<Job>(1) }
 
     val raio by av.transition.animateDp(
-        transitionSpec = { tween(if (targetState == EnterExitState.Visible) 500 else TempoGaleria.voltaMs, easing = CurvaIOS) },
+        transitionSpec = {
+            Animacoes.espec(
+                tween(if (targetState == EnterExitState.Visible) 500 else TempoGaleria.voltaMs, easing = CurvaIOS),
+                tween(if (targetState == EnterExitState.Visible) 250 else TempoGaleria.voltaMs, easing = CurvaIOS),
+            )
+        },
         label = "raio",
     ) {
         if (it == EnterExitState.Visible) 0.dp else 14.dp
@@ -1037,17 +1051,12 @@ private fun PaginaVideo(
                 val fim = if (alvo <= 1f) Offset.Zero
                 else if (foco != null) deslocamentoParaFoco(foco, inicioDesloc, inicio, alvo, w, h)
                 else inicioDesloc
-                animate(0f, 1f, animationSpec = spring(dampingRatio = 0.9f, stiffness = 260f)) { t, _ ->
+                animate(0f, 1f, animationSpec = Animacoes.espec(spring(dampingRatio = 0.9f, stiffness = 260f), tween(150))) { t, _ ->
                     escala = inicio + (alvo - inicio) * t
                     deslocamento = inicioDesloc + (fim - inicioDesloc) * t
                 }
                 aoZoom(alvo > 1f)
             }
-        }
-
-        fun arrastar() {
-            val cor = CoresMidia.obter(f.id)?.toArgb() ?: android.graphics.Color.DKGRAY
-            iniciarArrasto(view, f, miniaturaPequena(miniaturaCarregada[0]), cor)
         }
 
         val gestos = if (ctrl == null) {
@@ -1075,24 +1084,15 @@ private fun PaginaVideo(
                         )
                     }
                 }
-                // toque: interface; segurar: turbo (e, segurando mais, arrastar para outro app);
+                // toque: interface; segurar: turbo (vídeos não são copiados nem arrastados para outros apps, só fotos);
                 // toque duplo: laterais ±salto e centro amplia no ponto tocado ou volta ao normal
                 .pointerInput(ctrl, w, h) {
                     detectTapGestures(
                         onPress = {
                             tryAwaitRelease()
                             ctrl.desligarTurbo()
-                            tarefaArrasto[0]?.cancel()
                         },
-                        onLongPress = {
-                            ctrl.ligarTurbo()
-                            tarefaArrasto[0]?.cancel()
-                            tarefaArrasto[0] = escopo.launch {
-                                delay(1100)
-                                ctrl.desligarTurbo()
-                                arrastar()
-                            }
-                        },
+                        onLongPress = { ctrl.ligarTurbo() },
                         onDoubleTap = { toque ->
                             val terco = size.width / 3f
                             when {
