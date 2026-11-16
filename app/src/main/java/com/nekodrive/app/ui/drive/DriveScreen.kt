@@ -16,6 +16,7 @@ import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.animateDp
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -90,7 +91,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalFocusManager
+import coil.request.CachePolicy
+import com.nekodrive.app.ui.Animacoes
 import com.nekodrive.app.ui.DialogRenomear
+import com.nekodrive.app.ui.LocalAnimarGifs
+import com.nekodrive.app.ui.LocalMiniaturasSoCache
+import com.nekodrive.app.ui.LocalMostrarNomes
+import com.nekodrive.app.ui.LocalVibrar
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
@@ -105,6 +112,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.unit.Density
@@ -132,12 +140,19 @@ import kotlinx.coroutines.launch
 
 private val CurvaIOS = CubicBezierEasing(0.32f, 0.72f, 0f, 1f)
 
-/** Largura mínima de cada miniatura da grade, conforme o ajuste de tamanho. */
-internal fun larguraMiniatura(tamanho: Int): Dp = when (tamanho) { 0 -> 90.dp; 2 -> 150.dp; else -> 110.dp }
+/** Largura mínima de cada miniatura da grade, conforme o ajuste de tamanho (1 médias, 2 grandes). */
+internal fun larguraMiniatura(tamanho: Int): Dp = if (tamanho >= 2) 150.dp else 110.dp
+
+/** Colunas da grade: fixas (2 a 4) ou automáticas pelo tamanho das miniaturas quando [colunas] é 0. */
+internal fun celulasGrade(colunas: Int, tamanho: Int): GridCells =
+    if (colunas in 2..4) GridCells.Fixed(colunas) else GridCells.Adaptive(larguraMiniatura(tamanho))
+
+/** Lado da miniatura na lista, conforme o mesmo ajuste de tamanho. */
+internal fun ladoMiniaturaLista(tamanho: Int): Dp = if (tamanho >= 2) 80.dp else 56.dp
 
 /** Mesma duração de antes (cerca de 500 ms) com curva de desaceleração suave, no estilo das animações do iOS. */
 @OptIn(ExperimentalSharedTransitionApi::class)
-private val CurvaSuave = BoundsTransform { _, _ -> tween(durationMillis = 500, easing = CurvaIOS) }
+private val CurvaSuave = BoundsTransform { _, _ -> Animacoes.espec(tween(durationMillis = 500, easing = CurvaIOS), tween(220)) }
 
 /**
  * Elemento compartilhado entre a origem (card/miniatura) e o destino (tela da pasta ou galeria).
@@ -153,11 +168,12 @@ internal fun Modifier.pastaBounds(
     desvanecerOrigem: Boolean = false,
 ): Modifier =
     with(st) {
+        val saida = if (desvanecerOrigem) fadeOut(tween(140)) else ExitTransition.None
         this@pastaBounds.sharedBounds(
             rememberSharedContentState(key = chave),
             animatedVisibilityScope = av,
             enter = EnterTransition.None,
-            exit = if (desvanecerOrigem) fadeOut(tween(140)) else ExitTransition.None,
+            exit = Animacoes.saida(saida, saida),
             boundsTransform = CurvaSuave,
             resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
         )
@@ -183,10 +199,10 @@ private val CurvaVolta = Easing { f -> CurvaIOS.transform((f * TempoGaleria.tota
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 private val CurvaMidia = BoundsTransform { _, _ ->
-    if (TempoGaleria.fechando) {
-        tween(durationMillis = TempoGaleria.totalMs, easing = CurvaVolta)
-    } else {
-        tween(durationMillis = 500, easing = CurvaIOS)
+    when {
+        Animacoes.sem -> snap<Rect>()
+        TempoGaleria.fechando -> tween(durationMillis = TempoGaleria.totalMs, easing = CurvaVolta)
+        else -> tween(durationMillis = Animacoes.ms(500, 250), easing = CurvaIOS)
     }
 }
 
@@ -215,21 +231,23 @@ internal fun Modifier.midiaBounds(
     miniatura: Boolean,
 ): Modifier =
     with(st) {
+        // abrindo: a miniatura some logo e a mídia cresce sozinha; fechando: a mídia volta, fica 0,2 s
+        // sobre o lugar da miniatura e então é trocada por ela
+        val entrada = if (miniatura) {
+            fadeIn(tween(TempoGaleria.TROCA_MS, delayMillis = TempoGaleria.voltaMs + TempoGaleria.esperaMs))
+        } else {
+            EnterTransition.None
+        }
+        val saida = if (miniatura) {
+            fadeOut(tween(120))
+        } else {
+            fadeOut(tween(TempoGaleria.TROCA_MS, delayMillis = TempoGaleria.voltaMs + TempoGaleria.esperaMs))
+        }
         this@midiaBounds.sharedBounds(
             rememberSharedContentState(key = chave),
             animatedVisibilityScope = av,
-            // abrindo: a miniatura some logo e a mídia cresce sozinha; fechando: a mídia volta, fica 0,2 s
-            // sobre o lugar da miniatura e então é trocada por ela
-            enter = if (miniatura) {
-                fadeIn(tween(TempoGaleria.TROCA_MS, delayMillis = TempoGaleria.voltaMs + TempoGaleria.esperaMs))
-            } else {
-                EnterTransition.None
-            },
-            exit = if (miniatura) {
-                fadeOut(tween(120))
-            } else {
-                fadeOut(tween(TempoGaleria.TROCA_MS, delayMillis = TempoGaleria.voltaMs + TempoGaleria.esperaMs))
-            },
+            enter = Animacoes.entrada(entrada, entrada),
+            exit = Animacoes.saida(saida, saida),
             boundsTransform = CurvaMidia,
             resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
             clipInOverlayDuringTransition = SemCorte,
@@ -259,9 +277,9 @@ fun DriveScreen(
     val alfaTextos = remember { Animatable(1f) }
     LaunchedEffect(vm.grade) {
         if (vm.grade != gradeExibida) {
-            alfaTextos.animateTo(0f, tween(150, easing = CurvaIOS))
+            alfaTextos.animateTo(0f, Animacoes.espec(tween(150, easing = CurvaIOS), tween(80)))
             gradeExibida = vm.grade
-            alfaTextos.animateTo(1f, tween(280, easing = CurvaIOS))
+            alfaTextos.animateTo(1f, Animacoes.espec(tween(280, easing = CurvaIOS), tween(120)))
         }
     }
 
@@ -299,7 +317,10 @@ fun DriveScreen(
         AnimatedContent(
             targetState = chave,
             modifier = Modifier.fillMaxSize(),
-            transitionSpec = { fadeIn(tween(1)) togetherWith fadeOut(tween(500)) },
+            transitionSpec = {
+                if (Animacoes.sem) EnterTransition.None togetherWith ExitTransition.None
+                else fadeIn(tween(1)) togetherWith fadeOut(tween(Animacoes.ms(500, 150)))
+            },
             label = "pasta",
         ) { chavePagina ->
             PaginaPasta(
@@ -495,25 +516,28 @@ private fun PaginaPasta(
     // Só a página que nasce de um card (ou volta para ele) usa a forma e a cor do card; as demais
     // (busca, raiz) ficam sempre na cor de fundo, sem o clarão cinza durante a transição.
     val casada = legendaDoCard
-    val raio by av.transition.animateDp(transitionSpec = { tween(500, easing = CurvaIOS) }, label = "raio") {
+    val raio by av.transition.animateDp(transitionSpec = { Animacoes.espec(tween(500, easing = CurvaIOS), tween(200)) }, label = "raio") {
         if (it == EnterExitState.Visible || !casada) 0.dp else 14.dp
     }
-    val fundo by av.transition.animateColor(transitionSpec = { tween(500, easing = CurvaIOS) }, label = "fundo") {
+    val fundo by av.transition.animateColor(transitionSpec = { Animacoes.espec(tween(500, easing = CurvaIOS), tween(200)) }, label = "fundo") {
         if (it == EnterExitState.Visible || !casada) tema.background else tema.surfaceVariant
     }
     // O conteúdo da pasta entra um pouco depois, para a legenda do card acompanhar a expansão primeiro
     val opacidadeConteudo by av.transition.animateFloat(
         transitionSpec = {
-            if (!casada) tween(350)
-            else if (targetState == EnterExitState.Visible) tween(300, 140)
-            else tween(180)
+            Animacoes.espec<Float>(
+                if (!casada) tween(350)
+                else if (targetState == EnterExitState.Visible) tween(300, 140)
+                else tween(180),
+                tween(150),
+            )
         },
         label = "conteudo",
     ) {
         if (it == EnterExitState.Visible) 1f else 0f
     }
     val alfaLegenda by av.transition.animateFloat(
-        transitionSpec = { tween(if (targetState == EnterExitState.Visible) 260 else 200) },
+        transitionSpec = { Animacoes.espec(tween(if (targetState == EnterExitState.Visible) 260 else 200), tween(120)) },
         label = "legenda",
     ) {
         if (it == EnterExitState.Visible) 0f else 1f
@@ -530,7 +554,7 @@ private fun PaginaPasta(
             Box(Modifier.fillMaxSize().graphicsLayer { translationY = rebote.deslocamento }) {
                 CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
                     LazyVerticalGrid(
-                        columns = if (grade) GridCells.Adaptive(larguraMiniatura(vm.tamanhoMiniatura)) else GridCells.Fixed(1),
+                        columns = if (grade) celulasGrade(vm.colunas, vm.tamanhoMiniatura) else GridCells.Fixed(1),
                         state = vm.estadoGrade(chave),
                         contentPadding = PaddingValues(
                             start = if (grade) 12.dp else 0.dp,
@@ -548,18 +572,25 @@ private fun PaginaPasta(
                                 Modifier.animateItem(
                                     fadeInSpec = null,
                                     fadeOutSpec = null,
-                                    placementSpec = spring(
-                                        dampingRatio = 0.9f,
-                                        stiffness = 300f,
-                                        visibilityThreshold = IntOffset(1, 1),
-                                    ),
+                                    placementSpec = if (Animacoes.normais) {
+                                        spring(
+                                            dampingRatio = 0.9f,
+                                            stiffness = 300f,
+                                            visibilityThreshold = IntOffset(1, 1),
+                                        )
+                                    } else {
+                                        null
+                                    },
                                 ).graphicsLayer {
                                     // troca grade/lista: o item esmaece e encolhe de leve, muda de lugar e volta
-                                    val a = alfaTextos()
-                                    alpha = 0.25f + 0.75f * a
-                                    val e = 0.96f + 0.04f * a
-                                    scaleX = e
-                                    scaleY = e
+                                    // (só nas animações normais: uma camada por item pesa na GPU)
+                                    if (Animacoes.normais) {
+                                        val a = alfaTextos()
+                                        alpha = 0.25f + 0.75f * a
+                                        val e = 0.96f + 0.04f * a
+                                        scaleX = e
+                                        scaleY = e
+                                    }
                                 },
                             ) {
                                 if (grade) {
@@ -573,6 +604,7 @@ private fun PaginaPasta(
                                         f, vm.token, f.id in vm.selecionados, vm.estadoDe(f), st, av, avExterno,
                                         { aoTocar(f) }, { vm.alternarSelecao(f) },
                                         alfaTexto = alfaTextos,
+                                        ladoMiniatura = ladoMiniaturaLista(vm.tamanhoMiniatura),
                                     )
                                 }
                             }
@@ -654,20 +686,18 @@ private fun Miniatura(
     modifier: Modifier = Modifier,
     fundo: Color = Color.Transparent,
     aoCor: ((Color) -> Unit)? = null,
+    /** Na grade, a capa da pasta é desenhada pelo card inteiro; aqui fica só o selo de pasta. */
+    capaNoCard: Boolean = false,
 ) {
     val context = LocalContext.current
     val ehGif = f.mimeType == "image/gif"
+    val animarGifs = LocalAnimarGifs.current
+    val soCache = LocalMiniaturasSoCache.current
     Box(modifier.background(fundo), contentAlignment = Alignment.Center) {
         val capa = estado.capa
         if (f.isFolder && capa != null) {
-            // pasta com capa: a foto escolhida preenche o card, com um selo de pasta no canto
-            val pedido = ImageRequest.Builder(context)
-                .data("https://www.googleapis.com/drive/v3/files/$capa?alt=media")
-                .apply { if (token != null) addHeader("Authorization", "Bearer $token") }
-                .size(320, 320)
-                .crossfade(true)
-                .build()
-            AsyncImage(pedido, f.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            // pasta com capa: a foto escolhida preenche o espaço, com um selo de pasta no canto
+            if (!capaNoCard) CapaPasta(capa, token, f.name, Modifier.fillMaxSize())
             Icon(
                 Icons.Rounded.Folder, "Pasta", tint = Color.White,
                 modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp)
@@ -675,12 +705,19 @@ private fun Miniatura(
             )
         } else if (!f.isFolder && (f.thumbnailLink != null || ehGif)) {
             // GIFs animam na miniatura, em baixa resolução e sem reduzir os quadros por segundo
+            // GIF animado (ajuste ligado) vem do arquivo; senão usa a miniatura estática do Drive, que é bem mais leve
+            val animar = ehGif && animarGifs
+            val doArquivo = animar || (ehGif && f.thumbnailLink == null)
             val request = ImageRequest.Builder(context)
-                .data(if (ehGif) "https://www.googleapis.com/drive/v3/files/${f.id}?alt=media" else f.thumbnailLink)
+                .data(if (doArquivo) "https://www.googleapis.com/drive/v3/files/${f.id}?alt=media" else f.thumbnailLink)
                 .apply { if (token != null) addHeader("Authorization", "Bearer $token") }
-                .apply { if (ehGif) { size(256, 256); emLoop() } }
+                .apply { if (animar) { size(256, 256); emLoop() } }
+                // chave estável: a miniatura guardada continua valendo mesmo quando o link do Drive muda
+                .diskCacheKey("miniatura-${if (doArquivo) "arq" else "thumb"}-${f.id}-${f.modifiedTime}")
+                .memoryCacheKey("miniatura-${if (doArquivo) "arq" else "thumb"}-${f.id}-${f.modifiedTime}")
+                .networkCachePolicy(if (soCache) CachePolicy.DISABLED else CachePolicy.ENABLED)
                 .allowHardware(false)
-                .crossfade(true)
+                .crossfade(!Animacoes.sem)
                 .build()
             AsyncImage(
                 request, f.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
@@ -725,6 +762,29 @@ private fun Miniatura(
     }
 }
 
+/** Foto de capa de uma pasta, cortada para cobrir todo o espaço. [aoCarregar] avisa quando a imagem já apareceu. */
+@Composable
+private fun CapaPasta(capa: String, token: String?, nome: String, modifier: Modifier, aoCarregar: () -> Unit = {}) {
+    val context = LocalContext.current
+    val soCache = LocalMiniaturasSoCache.current
+    val semAnimacao = Animacoes.sem
+    val pedido = remember(capa, token, soCache, semAnimacao) {
+        ImageRequest.Builder(context)
+            .data("https://www.googleapis.com/drive/v3/files/$capa?alt=media")
+            .apply { if (token != null) addHeader("Authorization", "Bearer $token") }
+            .size(480, 480)
+            .diskCacheKey("capa-$capa")
+            .memoryCacheKey("capa-$capa")
+            .networkCachePolicy(if (soCache) CachePolicy.DISABLED else CachePolicy.ENABLED)
+            .crossfade(!semAnimacao)
+            .build()
+    }
+    AsyncImage(pedido, nome, modifier, contentScale = ContentScale.Crop, onSuccess = { aoCarregar() })
+}
+
+/** Sombra sutil do texto sobre a capa de uma pasta. */
+private val SombraTexto = Shadow(color = Color.Black.copy(alpha = 0.55f), offset = Offset(0f, 1.5f), blurRadius = 5f)
+
 /** Cores de um item de mídia: fundo e texto seguem a cor que mais aparece na miniatura, de forma gradual. */
 private class TintaMidia(val fundo: Color, val texto: Color, val tingido: Boolean, val aoCor: ((Color) -> Unit)?)
 
@@ -734,13 +794,13 @@ private fun tintaMidia(f: DriveFile, neutro: Color, textoNeutro: Color): TintaMi
     var dominante by remember(f.id) { mutableStateOf(CoresMidia.obter(f.id)) }
     // um toque de preto (22%) deixa o card mais escuro e o texto branco mais legível
     val alvoFundo = dominante?.let { lerp(lerp(tema.surfaceVariant, it, 0.55f), Color.Black, 0.22f) } ?: neutro
-    val fundo by animateColorAsState(alvoFundo, tween(700), label = "corCard")
+    val fundo by animateColorAsState(alvoFundo, Animacoes.espec(tween(700), tween(150)), label = "corCard")
     val alvoTexto = when {
         dominante == null -> textoNeutro
         fundo.luminance() > 0.5f -> Color(0xFF1B1B1F)
         else -> Color.White
     }
-    val texto by animateColorAsState(alvoTexto, tween(700), label = "corTexto")
+    val texto by animateColorAsState(alvoTexto, Animacoes.espec(tween(700), tween(150)), label = "corTexto")
     val aoCor: ((Color) -> Unit)? = if (f.isImage || f.isVideo) {
         { c ->
             if (c != Color.Unspecified) {
@@ -773,6 +833,7 @@ internal fun ItemGrade(
     alfaTexto: () -> Float = { 1f },
 ) {
     val haptico = LocalHapticFeedback.current
+    val vibrar = LocalVibrar.current
     val tema = MaterialTheme.colorScheme
     val tinta = tintaMidia(f, tema.surfaceVariant, tema.onSurfaceVariant)
     val corCard = tinta.fundo
@@ -785,35 +846,49 @@ internal fun ItemGrade(
         f.isVideo -> Modifier.midiaBounds("video-${f.id}", st, avExterno, miniatura = true)
         else -> Modifier
     }
-    Column(
+    // pasta com capa: a foto preenche o card inteiro (miniatura + legenda) e o nome ganha uma sombra sutil
+    val capaPasta = if (f.isFolder) estado.capa else null
+    var capaPronta by remember(capaPasta) { mutableStateOf(false) }
+    val corNome by animateColorAsState(if (capaPasta != null && capaPronta) Color.White else corTexto, Animacoes.espec(tween(300), tween(100)), label = "corNomePasta")
+    val estiloNome = MaterialTheme.typography.bodySmall.let { if (capaPasta != null && capaPronta) it.copy(shadow = SombraTexto) else it }
+    Box(
         Modifier.then(origemCard)
             .clip(forma)
             .background(corCard)
             .then(if (selecionado) Modifier.border(3.dp, tema.primary, forma) else Modifier)
             .combinedClickable(
                 onClick = onClick,
-                onLongClick = { haptico.performHapticFeedback(HapticFeedbackType.LongPress); onLongClick() },
+                onLongClick = { if (vibrar) haptico.performHapticFeedback(HapticFeedbackType.LongPress); onLongClick() },
             ),
     ) {
-        Box(Modifier.fillMaxWidth().aspectRatio(1f).then(origemMiniatura)) {
-            Miniatura(
-                f, token, estado, 44.dp, Modifier.fillMaxSize(),
-                aoCor = tinta.aoCor,
-            )
-            if (selecionado) {
-                Icon(
-                    Icons.Rounded.CheckCircle, contentDescription = "Selecionado",
-                    tint = tema.primary,
-                    modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(24.dp),
+        if (capaPasta != null) {
+            CapaPasta(capaPasta, token, f.name, Modifier.matchParentSize(), aoCarregar = { capaPronta = true })
+        }
+        Column {
+            Box(Modifier.fillMaxWidth().aspectRatio(1f).then(origemMiniatura)) {
+                Miniatura(
+                    f, token, estado, 44.dp, Modifier.fillMaxSize(),
+                    aoCor = tinta.aoCor,
+                    capaNoCard = true,
+                )
+                if (selecionado) {
+                    Icon(
+                        Icons.Rounded.CheckCircle, contentDescription = "Selecionado",
+                        tint = tema.primary,
+                        modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(24.dp),
+                    )
+                }
+            }
+            // com "nomes na grade" desligado, só fotos e vídeos ficam sem nome (pastas e outros arquivos mantêm)
+            if (LocalMostrarNomes.current || !(f.isImage || f.isVideo)) {
+                NomeUmaLinha(
+                    f.name,
+                    Modifier.fillMaxWidth().padding(8.dp).graphicsLayer { alpha = alfaTexto() },
+                    style = estiloNome,
+                    color = corNome,
                 )
             }
         }
-        NomeUmaLinha(
-            f.name,
-            Modifier.fillMaxWidth().padding(8.dp).graphicsLayer { alpha = alfaTexto() },
-            style = MaterialTheme.typography.bodySmall,
-            color = corTexto,
-        )
     }
 }
 
@@ -831,8 +906,10 @@ internal fun ItemLinha(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     alfaTexto: () -> Float = { 1f },
+    ladoMiniatura: Dp = 56.dp,
 ) {
     val haptico = LocalHapticFeedback.current
+    val vibrar = LocalVibrar.current
     val tema = MaterialTheme.colorScheme
     val tinta = tintaMidia(f, Color.Transparent, tema.onSurface)
     val forma = RoundedCornerShape(14.dp)
@@ -851,14 +928,14 @@ internal fun ItemLinha(
             .background(fundo)
             .combinedClickable(
                 onClick = onClick,
-                onLongClick = { haptico.performHapticFeedback(HapticFeedbackType.LongPress); onLongClick() },
+                onLongClick = { if (vibrar) haptico.performHapticFeedback(HapticFeedbackType.LongPress); onLongClick() },
             )
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Miniatura(
-            f, token, estado, 28.dp,
-            Modifier.size(56.dp).then(origem).clip(RoundedCornerShape(10.dp)),
+            f, token, estado, ladoMiniatura / 2,
+            Modifier.size(ladoMiniatura).then(origem).clip(RoundedCornerShape(10.dp)),
             fundo = tema.surfaceVariant,
             aoCor = tinta.aoCor,
         )
