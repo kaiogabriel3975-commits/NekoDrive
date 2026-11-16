@@ -54,7 +54,8 @@ import com.nekodrive.app.ui.drive.ItemGrade
 import com.nekodrive.app.ui.drive.ItemLinha
 import com.nekodrive.app.ui.fonteVidro
 import com.nekodrive.app.ui.DialogRenomear
-import com.nekodrive.app.ui.drive.larguraMiniatura
+import com.nekodrive.app.ui.drive.ladoMiniaturaLista
+import com.nekodrive.app.ui.drive.celulasGrade
 import com.nekodrive.app.ui.galeria.BotaoVidro
 import com.nekodrive.app.ui.galeria.CirculoVidro
 import com.nekodrive.app.ui.galeria.PilulaVidro
@@ -93,7 +94,7 @@ fun FavoritosScreen(
             CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
                 if (vm.grade) {
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(larguraMiniatura(vm.tamanhoMiniatura)),
+                        columns = celulasGrade(vm.colunas, vm.tamanhoMiniatura),
                         state = vm.estadoGrade(CHAVE),
                         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = topo + alturaTopo + 12.dp, bottom = base + 12.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -117,6 +118,7 @@ fun FavoritosScreen(
                             ItemLinha(
                                 f, vm.token, f.id in vm.selecionados, vm.estadoDe(f), st, av, av,
                                 { aoTocar(f) }, { vm.alternarSelecao(f) },
+                                ladoMiniatura = ladoMiniaturaLista(vm.tamanhoMiniatura),
                             )
                         }
                     }
