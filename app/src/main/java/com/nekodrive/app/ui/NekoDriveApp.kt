@@ -59,6 +59,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
@@ -424,6 +425,8 @@ private fun LateralPaisagem(
 private fun Cabecalho(abrirContas: () -> Unit, abrirConfig: () -> Unit) {
     val cor = MaterialTheme.colorScheme.surface
     val vidroAtivo = LocalVidroAtivo.current
+    // sem blur o gradiente é branco no tema claro (texto escuro) e preto no escuro (texto claro)
+    val textoClaro = !vidroAtivo && MaterialTheme.colorScheme.surface.luminance() <= 0.5f
     TopAppBar(
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -439,9 +442,9 @@ private fun Cabecalho(abrirContas: () -> Unit, abrirConfig: () -> Unit) {
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = Color.Transparent,
             scrolledContainerColor = Color.Transparent,
-            // sobre o gradiente preto (blur desligado) o texto e os ícones precisam ser claros
-            titleContentColor = if (vidroAtivo) MaterialTheme.colorScheme.onSurface else Color.White,
-            actionIconContentColor = if (vidroAtivo) MaterialTheme.colorScheme.onSurfaceVariant else Color.White,
+            // sobre o gradiente preto (tema escuro, blur desligado) o texto e os ícones precisam ser claros
+            titleContentColor = if (textoClaro) Color.White else MaterialTheme.colorScheme.onSurface,
+            actionIconContentColor = if (textoClaro) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
         ),
         modifier = Modifier.vidroGradiente()
             .then(
