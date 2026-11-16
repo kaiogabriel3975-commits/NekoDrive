@@ -16,7 +16,10 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandIn
+import androidx.compose.animation.shrinkOut
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -130,18 +133,20 @@ fun NekoDriveApp() {
     // Vidro com blur: estilo geral e estilo do cabeçalho (gradiente de blur)
     val corVidro = MaterialTheme.colorScheme.surface
     val vidroEstado = remember { HazeState() }
+    val fatorBlur = when (vm.blurIntensidade) { 0 -> 0.5f; 2 -> 1.5f; else -> 1f }
     val vidroEstilo = HazeStyle(
         backgroundColor = corVidro,
         tint = HazeTint(corVidro.copy(alpha = 0.55f)),
-        blurRadius = 24.dp,
+        blurRadius = 24.dp * fatorBlur,
         noiseFactor = 0f,
     )
     val vidroCabecalho = HazeStyle(
         backgroundColor = corVidro,
         tint = HazeTint(corVidro.copy(alpha = 0f)),
-        blurRadius = 28.dp,
+        blurRadius = 28.dp * fatorBlur,
         noiseFactor = 0f,
     )
+    val redeWifi = rememberRedeWifi()
     val vidroCtx = remember(vidroEstado, vidroEstilo, vidroCabecalho, corVidro) { Vidro(vidroEstado, vidroEstilo, vidroCabecalho, corVidro) }
 
     // 1) tela de consentimento do Google (quando necessária)
@@ -206,6 +211,11 @@ fun NekoDriveApp() {
     CompositionLocalProvider(
         LocalVidro provides vidroCtx,
         LocalVidroAtivo provides vm.vidroAtivo,
+        LocalVibrar provides vm.vibrar,
+        LocalMostrarNomes provides vm.mostrarNomes,
+        LocalAnimarGifs provides vm.animarGifs,
+        LocalMiniaturasSoCache provides (vm.miniaturasSoWifi && !redeWifi),
+        LocalReflexoPilula provides vm.reflexoPilula,
         LocalMarqueePausado provides (vm.visualizador != null || congelarNomes),
     ) {
         Surface(
@@ -413,6 +423,7 @@ private fun LateralPaisagem(
 @Composable
 private fun Cabecalho(abrirContas: () -> Unit, abrirConfig: () -> Unit) {
     val cor = MaterialTheme.colorScheme.surface
+    val vidroAtivo = LocalVidroAtivo.current
     TopAppBar(
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -428,9 +439,15 @@ private fun Cabecalho(abrirContas: () -> Unit, abrirConfig: () -> Unit) {
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = Color.Transparent,
             scrolledContainerColor = Color.Transparent,
+            // sobre o gradiente preto (blur desligado) o texto e os ícones precisam ser claros
+            titleContentColor = if (vidroAtivo) MaterialTheme.colorScheme.onSurface else Color.White,
+            actionIconContentColor = if (vidroAtivo) MaterialTheme.colorScheme.onSurfaceVariant else Color.White,
         ),
         modifier = Modifier.vidroGradiente()
-            .background(Brush.verticalGradient(listOf(cor.copy(alpha = 0.7f), Color.Transparent))),
+            .then(
+                if (vidroAtivo) Modifier.background(Brush.verticalGradient(listOf(cor.copy(alpha = 0.7f), Color.Transparent)))
+                else Modifier,
+            ),
     )
 }
 
@@ -449,8 +466,8 @@ private fun BarraFlutuante(
     AnimatedVisibility(
         visible = visivel,
         modifier = modifier,
-        enter = slideInVertically(tween(300)) { it * 2 } + fadeIn(tween(300)),
-        exit = slideOutVertically(tween(300)) { it * 2 } + fadeOut(tween(200)),
+        enter = Animacoes.entrada(slideInVertically(tween(300)) { it * 2 } + fadeIn(tween(300))),
+        exit = Animacoes.saida(slideOutVertically(tween(300)) { it * 2 } + fadeOut(tween(200))),
     ) {
         val forma = RoundedCornerShape(50)
         Row(
@@ -469,6 +486,7 @@ private fun BarraFlutuante(
 private fun ItemBarra(d: Destino, selecionado: Boolean, aoClicar: () -> Unit) {
     val fundo by animateColorAsState(
         if (selecionado) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+        animationSpec = Animacoes.espec(spring(), tween(120)),
         label = "itemBarra",
     )
     Row(
@@ -477,7 +495,11 @@ private fun ItemBarra(d: Destino, selecionado: Boolean, aoClicar: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(if (selecionado) d.iconeSelecionado else d.icone, contentDescription = d.rotulo)
-        AnimatedVisibility(visible = selecionado) {
+        AnimatedVisibility(
+            visible = selecionado,
+            enter = Animacoes.entrada(fadeIn() + expandIn(), fadeIn(tween(100))),
+            exit = Animacoes.saida(fadeOut() + shrinkOut(), fadeOut(tween(100))),
+        ) {
             Text(d.rotulo, Modifier.padding(start = 8.dp), style = MaterialTheme.typography.labelLarge)
         }
     }
