@@ -723,7 +723,11 @@ private fun Miniatura(
                 request, f.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
                 onSuccess = { s ->
                     if (f.isImage || f.isVideo) ProporcoesMidia.guardar(f.id, s.result.drawable)
-                    if (aoCor != null) runCatching { aoCor(corDominante(s.result.drawable)) }
+                    if (aoCor != null) runCatching {
+                        val cores = coresDaImagem(s.result.drawable)
+                        if (cores.forte != Color.Unspecified) CoresMidia.guardarForte(f.id, cores.forte)
+                        aoCor(cores.dominante)
+                    }
                 },
             )
         } else {
