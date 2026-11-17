@@ -92,37 +92,15 @@ fun CirculoVidro(aoClicar: () -> Unit, modifier: Modifier = Modifier, conteudo: 
 }
 
 /**
- * Contorno de vidro com reflexos sutis: um brilho forte no canto superior esquerdo e outro mais fraco no
- * inferior direito. Os reflexos pegam a cor do ambiente ([ambiente], em geral a cor dominante da mídia
- * que está por trás) e mudam suavemente quando ela muda.
+ * Vários botões (ou um texto) agrupados numa única pílula de vidro com blur. Com [luz], o contorno é
+ * iluminado pela mídia que está por perto (veja [reflexoLuz]).
  */
 @Composable
-private fun Modifier.contornoReflexo(ambiente: Color, forma: Shape): Modifier {
-    val cor by animateColorAsState(ambiente, Animacoes.espec(tween(600), tween(150)), label = "reflexo")
-    val brilho = lerp(Color.White, cor, 0.45f)
-    val brilhoFraco = lerp(Color.White, cor, 0.7f)
-    val traco = Brush.linearGradient(
-        0f to brilho.copy(alpha = 0.75f),
-        0.25f to brilho.copy(alpha = 0.15f),
-        0.5f to cor.copy(alpha = 0.06f),
-        0.78f to brilhoFraco.copy(alpha = 0.18f),
-        1f to brilhoFraco.copy(alpha = 0.55f),
-        start = Offset.Zero,
-        end = Offset.Infinite,
-    )
-    return this.border(1.dp, traco, forma)
-}
-
-/**
- * Vários botões (ou um texto) agrupados numa única pílula de vidro com blur. Com [reflexo], o contorno
- * recebe reflexos sutis nessa cor de ambiente.
- */
-@Composable
-fun PilulaVidro(modifier: Modifier = Modifier, reflexo: Color? = null, conteudo: @Composable RowScope.() -> Unit) {
+fun PilulaVidro(modifier: Modifier = Modifier, luz: AmbienteLuz? = null, conteudo: @Composable RowScope.() -> Unit) {
     val forma = RoundedCornerShape(50)
     Row(
         modifier.clip(forma).vidro()
-            .then(if (reflexo != null) Modifier.contornoReflexo(reflexo, forma) else Modifier)
+            .then(if (luz != null) Modifier.reflexoLuz(luz) else Modifier)
             .padding(horizontal = 8.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.CenterVertically,
