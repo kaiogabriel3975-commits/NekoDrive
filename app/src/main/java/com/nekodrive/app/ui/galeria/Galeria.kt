@@ -130,6 +130,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
@@ -237,6 +240,11 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
 
     var controles by remember { mutableStateOf(true) }
     var zoomado by remember { mutableStateOf(false) }
+    // luz do ambiente para os reflexos das pílulas: posição e cor das mídias visíveis no pager
+    val luz = remember { AmbienteLuz().also { it.zoomado = { zoomado } } }
+    luz.pager = pager
+    luz.fotos = dados.fotos
+    luz.espaco = with(LocalDensity.current) { 16.dp.toPx() }
     var emPip by remember { mutableStateOf(false) }
     var paisagem by remember { mutableStateOf(false) }
     var menu by remember { mutableIntStateOf(0) } // 0 fechado, 1 principal, 2 velocidade, 3 legendas, 4 resolução
@@ -449,8 +457,15 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
     val compartilhar: () -> Unit = { scope.launch { compartilharArquivo(ctx, vm, atual) } }
 
     CompositionLocalProvider(LocalVidro provides vidroLocal) {
-        BoxWithConstraints(Modifier.fillMaxSize()) {
+        BoxWithConstraints(
+            Modifier.fillMaxSize().onPlaced { c ->
+                val p = c.positionInRoot()
+                luz.origemX = p.x; luz.origemY = p.y
+            },
+        ) {
             val h = constraints.maxHeight.toFloat()
+            luz.largura = constraints.maxWidth.toFloat()
+            luz.altura = h
             val drag = rememberDraggableState { d ->
                 if (!fechando) scope.launch { progresso.snapTo((progresso.value + d / (h * 0.45f)).coerceIn(0f, 1f)) }
             }
@@ -556,7 +571,7 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                     }
                 }
                 Dissolver(mostrarFoto, Modifier.align(Alignment.BottomCenter)) {
-                    PilulaVidro(Modifier.navigationBarsPadding().padding(bottom = 16.dp), reflexo = if (vm.reflexoPilula) (CoresMidia.obter(atual.id) ?: Color.White) else null) {
+                    PilulaVidro(Modifier.navigationBarsPadding().padding(bottom = 16.dp), luz = if (vm.reflexoPilula) luz else null) {
                         // GIFs não têm botão de copiar
                         if (!ehGif) BotaoVidro(Icons.Rounded.ContentCopy, "Copiar imagem", copiar)
                         BotaoVidro(Icons.Rounded.Share, "Compartilhar", compartilhar)
@@ -625,7 +640,7 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                             }
 
                             Box(Modifier.fillMaxWidth()) {
-                                PilulaVidro(Modifier.align(Alignment.Center), reflexo = if (vm.reflexoPilula) (CoresMidia.obter(atual.id) ?: Color.White) else null) {
+                                PilulaVidro(Modifier.align(Alignment.Center), luz = if (vm.reflexoPilula) luz else null) {
                                     BotaoVidro(
                                         if (estadoAtual.favorito) Icons.Rounded.Star else Icons.Rounded.StarBorder,
                                         if (estadoAtual.favorito) "Remover dos favoritos" else "Favoritar",
