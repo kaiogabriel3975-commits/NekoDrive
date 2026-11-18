@@ -331,7 +331,7 @@ fun Modifier.reflexoLuz(amb: AmbienteLuz, canto: Dp? = null): Modifier {
             val meia = hypot(w, h) / 2f
             drawRoundRect(
                 Brush.linearGradient(
-                    0f to branco.copy(alpha = 0.16f + 0.10f * intensidade),
+                    0f to branco.copy(alpha = 0.06f + 0.04f * intensidade),
                     0.55f to branco.copy(alpha = 0f),
                     start = Offset(centro.x + dx * meia, centro.y + dy * meia),
                     end = Offset(centro.x - dx * meia, centro.y - dy * meia),
@@ -344,25 +344,25 @@ fun Modifier.reflexoLuz(amb: AmbienteLuz, canto: Dp? = null): Modifier {
                 val f = luz.forca[s].coerceAtMost(1f)
                 if (f < 0.02f) continue
                 val i = s * 3
-                val n = Color(clarear(luz.nucleo[i], 0.55f), clarear(luz.nucleo[i + 1], 0.55f), clarear(luz.nucleo[i + 2], 0.55f), f * 0.85f)
-                val c = Color(clarear(luz.corpo[i], 0.3f), clarear(luz.corpo[i + 1], 0.3f), clarear(luz.corpo[i + 2], 0.3f), f * 0.55f)
+                val n = Color(clarear(luz.nucleo[i], 0.55f), clarear(luz.nucleo[i + 1], 0.55f), clarear(luz.nucleo[i + 2], 0.55f), f * 0.55f)
+                val c = Color(clarear(luz.corpo[i], 0.3f), clarear(luz.corpo[i + 1], 0.3f), clarear(luz.corpo[i + 2], 0.3f), f * 0.35f)
                 val pinc = pincel(s, w, h, n, c, c.copy(alpha = 0f))
                 val halo = 5.dp.toPx()
                 val aro = 1.dp.toPx()
-                drawRoundRect(pinc, cornerRadius = forma(0f), alpha = 0.09f)
+                drawRoundRect(pinc, cornerRadius = forma(0f), alpha = 0.04f)
                 drawRoundRect(
                     pinc, topLeft = Offset(halo / 2f, halo / 2f), size = Size(w - halo, h - halo),
-                    cornerRadius = forma(halo / 2f), style = Stroke(halo), alpha = 0.22f,
+                    cornerRadius = forma(halo / 2f), style = Stroke(halo), alpha = 0.09f,
                 )
                 drawRoundRect(
                     pinc, topLeft = Offset(aro / 2f, aro / 2f), size = Size(w - aro, h - aro),
-                    cornerRadius = forma(aro / 2f), style = Stroke(aro), alpha = 0.8f,
+                    cornerRadius = forma(aro / 2f), style = Stroke(aro), alpha = 0.40f,
                 )
             }
 
             // 3) aro especular: lóbulo principal virado para a luz e outro, mais fraco, no lado oposto
-            val a1 = 0.55f + 0.40f * intensidade
-            val a2 = 0.25f + 0.30f * intensidade
+            val a1 = 0.30f + 0.22f * intensidade
+            val a2 = 0.12f + 0.14f * intensidade
             fun b(a: Float) = branco.copy(alpha = a.coerceIn(0f, 1f))
             val pincelEspecular = varredura(
                 centro, graus,
@@ -377,11 +377,11 @@ fun Modifier.reflexoLuz(amb: AmbienteLuz, canto: Dp? = null): Modifier {
             val halo = 4.5.dp.toPx()
             drawRoundRect(
                 pincelEspecular, topLeft = Offset(halo / 2f, halo / 2f), size = Size(w - halo, h - halo),
-                cornerRadius = forma(halo / 2f), style = Stroke(halo), alpha = 0.20f,
+                cornerRadius = forma(halo / 2f), style = Stroke(halo), alpha = 0.08f,
             )
             drawRoundRect(
                 pincelEspecular, topLeft = Offset(corpo / 2f, corpo / 2f), size = Size(w - corpo, h - corpo),
-                cornerRadius = forma(corpo / 2f), style = Stroke(corpo), alpha = 0.45f,
+                cornerRadius = forma(corpo / 2f), style = Stroke(corpo), alpha = 0.22f,
             )
             drawRoundRect(
                 pincelEspecular, topLeft = Offset(fio / 2f, fio / 2f), size = Size(w - fio, h - fio),
@@ -389,7 +389,7 @@ fun Modifier.reflexoLuz(amb: AmbienteLuz, canto: Dp? = null): Modifier {
             )
             // fio de vidro bem discreto em todo o contorno, mesmo longe dos lóbulos
             drawRoundRect(
-                Color.White.copy(alpha = 0.09f), topLeft = Offset(fio / 2f, fio / 2f), size = Size(w - fio, h - fio),
+                Color.White.copy(alpha = 0.06f), topLeft = Offset(fio / 2f, fio / 2f), size = Size(w - fio, h - fio),
                 cornerRadius = forma(fio / 2f), style = Stroke(fio),
             )
         }
