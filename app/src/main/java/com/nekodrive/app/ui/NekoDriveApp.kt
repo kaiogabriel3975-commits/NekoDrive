@@ -50,6 +50,16 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInRoot
+import com.nekodrive.app.ui.galeria.AmbienteLuz
+import com.nekodrive.app.ui.galeria.CirculoVidro
+import com.nekodrive.app.ui.galeria.LocalLuz
+import com.nekodrive.app.ui.galeria.LocalLuzPrincipal
+import com.nekodrive.app.ui.galeria.LocalLuzSoToolbars
+import com.nekodrive.app.ui.galeria.reflexoLuz
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
@@ -116,6 +126,7 @@ enum class Destino(val rotulo: String, val icone: ImageVector, val iconeSelecion
     Drive("Drive", Icons.Rounded.Folder, Icons.Rounded.Folder),
     Favoritos("Favoritos", Icons.Rounded.FavoriteBorder, Icons.Rounded.Favorite),
     Lixeira("Lixeira", Icons.Rounded.Delete, Icons.Rounded.Delete),
+    Config("Config", Icons.Rounded.Settings, Icons.Rounded.Settings),
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
@@ -128,7 +139,6 @@ fun NekoDriveApp() {
 
     var atual by rememberSaveable { mutableStateOf(Destino.Drive) }
     var mostrarContas by rememberSaveable { mutableStateOf(false) }
-    var mostrarConfig by rememberSaveable { mutableStateOf(false) }
     val paisagem = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     // Vidro com blur: estilo geral e estilo do cabeçalho (gradiente de blur)
@@ -191,6 +201,13 @@ fun NekoDriveApp() {
         vm.limparSelecao()
     }
 
+    // Busca: botão ao lado da toolbar; vai para o Drive e abre o campo de busca
+    val aoBuscar: () -> Unit = {
+        atual = Destino.Drive
+        vm.limparSelecao()
+        vm.iniciarBusca()
+    }
+
     LaunchedEffect(vm.aviso) {
         vm.aviso?.let {
             Toast.makeText(context, it, Toast.LENGTH_LONG).show()
@@ -217,6 +234,7 @@ fun NekoDriveApp() {
         LocalAnimarGifs provides vm.animarGifs,
         LocalMiniaturasSoCache provides (vm.miniaturasSoWifi && !redeWifi),
         LocalReflexoPilula provides vm.reflexoPilula,
+        LocalFundoCard provides vm.fundoCard,
         LocalMarqueePausado provides (vm.visualizador != null || congelarNomes),
     ) {
         Surface(
@@ -253,7 +271,7 @@ fun NekoDriveApp() {
                         av = av,
                         paisagem = paisagem,
                         abrirContas = { mostrarContas = true },
-                        abrirConfig = { mostrarConfig = true },
+                        aoBuscar = aoBuscar,
                     )
                 }
             }
@@ -274,9 +292,6 @@ fun NekoDriveApp() {
     if (vm.detalhes != null) InfoSheet(vm)
     vm.planoDownload?.let { DialogDownloadPasta(vm, it) }
     if (vm.pastaDaCapa != null) SeletorCapa(vm)
-    if (mostrarConfig) {
-        ConfiguracoesSheet(vm, onContas = { mostrarContas = true }, onFechar = { mostrarConfig = false })
-    }
 }
 
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalMaterial3Api::class)
@@ -290,8 +305,10 @@ private fun Principal(
     av: AnimatedVisibilityScope,
     paisagem: Boolean,
     abrirContas: () -> Unit,
-    abrirConfig: () -> Unit,
+    aoBuscar: () -> Unit,
 ) {
+    // luz da tela principal: as miniaturas visíveis da lista iluminam as peças de vidro (a lista informa as fontes)
+    val luz = remember { AmbienteLuz().also { it.raioDp = 260f } }
     val tela: @Composable (PaddingValues) -> Unit = { padding ->
         when (atual) {
             Destino.Drive -> DriveScreen(vm, onEntrar = entrar, st = st, avExterno = av, contentPadding = padding)
@@ -300,12 +317,19 @@ private fun Principal(
                 vm.abrirPastaDireto(pasta)
             }
             Destino.Lixeira -> LixeiraScreen(vm, st, av, padding)
+            Destino.Config -> ConfiguracoesTela(vm, padding, abrirContas)
         }
     }
-    if (paisagem) {
-        PrincipalPaisagem(atual, aoSelecionar, abrirContas, abrirConfig, tela)
-    } else {
-        PrincipalRetrato(atual, aoSelecionar, abrirContas, abrirConfig, tela)
+    CompositionLocalProvider(
+        LocalLuz provides (if (vm.reflexoPilula) luz else null),
+        LocalLuzSoToolbars provides vm.reflexoSoToolbars,
+        LocalLuzPrincipal provides luz,
+    ) {
+        if (paisagem) {
+            PrincipalPaisagem(atual, aoSelecionar, aoBuscar, tela)
+        } else {
+            PrincipalRetrato(luz, atual, aoSelecionar, aoBuscar, tela)
+        }
     }
 }
 
@@ -313,10 +337,10 @@ private fun Principal(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PrincipalRetrato(
+    luz: AmbienteLuz,
     atual: Destino,
     aoSelecionar: (Destino) -> Unit,
-    abrirContas: () -> Unit,
-    abrirConfig: () -> Unit,
+    aoBuscar: () -> Unit,
     tela: @Composable (PaddingValues) -> Unit,
 ) {
     var barraVisivel by remember { mutableStateOf(true) }
@@ -329,13 +353,21 @@ private fun PrincipalRetrato(
             }
         }
     }
-    Scaffold(topBar = { Cabecalho(abrirContas, abrirConfig) }) { padding ->
-        Box(Modifier.fillMaxSize().nestedScroll(conexao)) {
+    Scaffold(topBar = { Cabecalho() }) { padding ->
+        Box(
+            Modifier.fillMaxSize().nestedScroll(conexao)
+                .onPlaced { c ->
+                    val p = c.positionInRoot()
+                    luz.origemX = p.x; luz.origemY = p.y
+                    luz.largura = c.size.width.toFloat(); luz.altura = c.size.height.toFloat()
+                },
+        ) {
             // O conteúdo ocupa a tela toda: as listas rolam por baixo do cabeçalho e da toolbar
             tela(PaddingValues(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 96.dp))
             BarraFlutuante(
                 atual = atual,
                 aoSelecionar = aoSelecionar,
+                aoBuscar = aoBuscar,
                 visivel = barraVisivel,
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = padding.calculateBottomPadding() + 16.dp),
             )
@@ -348,8 +380,7 @@ private fun PrincipalRetrato(
 private fun PrincipalPaisagem(
     atual: Destino,
     aoSelecionar: (Destino) -> Unit,
-    abrirContas: () -> Unit,
-    abrirConfig: () -> Unit,
+    aoBuscar: () -> Unit,
     tela: @Composable (PaddingValues) -> Unit,
 ) {
     val insets = WindowInsets.systemBars.asPaddingValues()
@@ -359,7 +390,7 @@ private fun PrincipalPaisagem(
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Start + WindowInsetsSides.Vertical))
                 .padding(start = 12.dp, top = 8.dp, bottom = 8.dp),
         ) {
-            LateralPaisagem(atual, aoSelecionar, abrirContas, abrirConfig)
+            LateralPaisagem(atual, aoSelecionar, aoBuscar)
         }
         Box(
             Modifier.weight(1f).fillMaxHeight()
@@ -374,8 +405,7 @@ private fun PrincipalPaisagem(
 private fun LateralPaisagem(
     atual: Destino,
     aoSelecionar: (Destino) -> Unit,
-    abrirContas: () -> Unit,
-    abrirConfig: () -> Unit,
+    aoBuscar: () -> Unit,
 ) {
     Surface(
         Modifier.fillMaxHeight(),
@@ -390,13 +420,8 @@ private fun LateralPaisagem(
             PawIcon()
             Spacer(Modifier.height(4.dp))
             Text("nekodrive", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-            Row(Modifier.padding(top = 4.dp)) {
-                IconButton(onClick = abrirContas, modifier = Modifier.size(40.dp)) {
-                    Icon(Icons.Rounded.AccountCircle, contentDescription = "Contas")
-                }
-                IconButton(onClick = abrirConfig, modifier = Modifier.size(40.dp)) {
-                    Icon(Icons.Rounded.Settings, contentDescription = "Configurações")
-                }
+            IconButton(onClick = aoBuscar, modifier = Modifier.padding(top = 4.dp).size(40.dp)) {
+                Icon(Icons.Rounded.Search, contentDescription = "Buscar")
             }
             Spacer(Modifier.height(8.dp))
             NavigationRail(
@@ -419,25 +444,21 @@ private fun LateralPaisagem(
     }
 }
 
-/** Cabeçalho personalizado (patinha, nome, perfil e configurações) com gradiente de blur. */
+/** Cabeçalho personalizado (nome e patinha, centralizados na tela) com gradiente de blur. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun Cabecalho(abrirContas: () -> Unit, abrirConfig: () -> Unit) {
+private fun Cabecalho() {
     val cor = MaterialTheme.colorScheme.surface
     val vidroAtivo = LocalVidroAtivo.current
     // sem blur o gradiente é branco no tema claro (texto escuro) e preto no escuro (texto claro)
     val textoClaro = !vidroAtivo && MaterialTheme.colorScheme.surface.luminance() <= 0.5f
-    TopAppBar(
+    CenterAlignedTopAppBar(
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("nekodrive", fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.width(8.dp))
                 PawIcon()
             }
-        },
-        actions = {
-            IconButton(onClick = abrirContas) { Icon(Icons.Rounded.AccountCircle, contentDescription = "Contas") }
-            IconButton(onClick = abrirConfig) { Icon(Icons.Rounded.Settings, contentDescription = "Configurações") }
         },
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = Color.Transparent,
@@ -463,6 +484,7 @@ private fun Cabecalho(abrirContas: () -> Unit, abrirConfig: () -> Unit) {
 private fun BarraFlutuante(
     atual: Destino,
     aoSelecionar: (Destino) -> Unit,
+    aoBuscar: () -> Unit,
     visivel: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -473,14 +495,21 @@ private fun BarraFlutuante(
         exit = Animacoes.saida(slideOutVertically(tween(300)) { it * 2 } + fadeOut(tween(200))),
     ) {
         val forma = RoundedCornerShape(50)
-        Row(
-            Modifier.clip(forma).vidro()
-                .border(0.6.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f), forma)
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Destino.entries.forEach { d -> ItemBarra(d, d == atual) { aoSelecionar(d) } }
+        val luz = LocalLuz.current
+        // a toolbar e o botão de busca (separado, ao lado) são peças independentes de vidro
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.clip(forma).vidro()
+                    .then(if (luz != null) Modifier.reflexoLuz(luz) else Modifier.border(0.6.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f), forma))
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Destino.entries.forEach { d -> ItemBarra(d, d == atual) { aoSelecionar(d) } }
+            }
+            CirculoVidro(aoClicar = aoBuscar, modifier = Modifier.size(52.dp), toolbar = true) {
+                Icon(Icons.Rounded.Search, "Buscar", tint = MaterialTheme.colorScheme.onSurface)
+            }
         }
     }
 }
@@ -494,7 +523,7 @@ private fun ItemBarra(d: Destino, selecionado: Boolean, aoClicar: () -> Unit) {
     )
     Row(
         Modifier.clip(RoundedCornerShape(50)).background(fundo).clickable(onClick = aoClicar)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(if (selecionado) d.iconeSelecionado else d.icone, contentDescription = d.rotulo)
