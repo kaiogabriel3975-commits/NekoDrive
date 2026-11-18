@@ -87,6 +87,9 @@ class ControleVideo(
     val cast = CastControle(ctx, vm.midia.servidor)
 
     var tocando by mutableStateOf(false); private set
+
+    /** Superfície em que o vídeo é desenhado; os reflexos tiram dela uma amostra minúscula do quadro atual. */
+    var textura: android.view.TextureView? = null
     var carregando by mutableStateOf(true); private set
     /** Verdadeiro depois do primeiro quadro pronto: antes disso é a tela de carregamento. */
     var pronto by mutableStateOf(false); private set
