@@ -3,7 +3,10 @@ package com.nekodrive.app.data
 import android.content.Context
 import org.json.JSONObject
 
-/** Capa escolhida para cada pasta (id da pasta -> id da foto), por conta. Só existe no aparelho. */
+/**
+ * Capa escolhida para cada pasta (id da pasta -> capa), por conta. Só existe no aparelho.
+ * Foto: o id dela. Vídeo: "v:ID|LINK" (id do vídeo e o link da miniatura que o Drive gera para ele).
+ */
 class CapasStore(context: Context) {
     private val p = context.getSharedPreferences("capas", Context.MODE_PRIVATE)
 
