@@ -1,6 +1,11 @@
 package com.nekodrive.app.ui.drive
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.foundation.layout.height
+import com.nekodrive.app.ui.galeria.LocalLuzPrincipal
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.BoundsTransform
@@ -53,7 +58,13 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.CreateNewFolder
+import androidx.compose.material.icons.rounded.DriveFileMove
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.UploadFile
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Folder
@@ -95,6 +106,7 @@ import coil.request.CachePolicy
 import com.nekodrive.app.ui.Animacoes
 import com.nekodrive.app.ui.DialogRenomear
 import com.nekodrive.app.ui.LocalAnimarGifs
+import com.nekodrive.app.ui.LocalFundoCard
 import com.nekodrive.app.ui.LocalMiniaturasSoCache
 import com.nekodrive.app.ui.LocalMostrarNomes
 import com.nekodrive.app.ui.LocalVibrar
@@ -269,8 +281,13 @@ fun DriveScreen(
     val ctxDrive = LocalContext.current
     val escopoDrive = rememberCoroutineScope()
     var menuOrdem by remember { mutableStateOf(false) }
+    var menuHamburguer by remember { mutableStateOf(false) }
+    var novaPasta by remember { mutableStateOf(false) }
     var renomear by remember { mutableStateOf<DriveFile?>(null) }
     val foco = LocalFocusManager.current
+    val escolherArquivos = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        vm.enviarArquivos(uris)
+    }
 
     // Troca grade/lista: o texto some rápido, o layout troca (itens deslizam) e o texto volta
     var gradeExibida by remember { mutableStateOf(vm.grade) }
@@ -313,6 +330,37 @@ fun DriveScreen(
     }
     val chave = if (vm.buscando) "busca" else vm.pilha.last().id
 
+    // A toolbar principal é iluminada pelas miniaturas visíveis da lista (cor e posição de cada uma)
+    val luzPrincipal = LocalLuzPrincipal.current
+    val estadoG = vm.estadoGrade(chave)
+    val estadoL = vm.estadoLista(chave)
+    SideEffect {
+        luzPrincipal?.movendo = { if (gradeExibida) estadoG.isScrollInProgress else estadoL.isScrollInProgress }
+        luzPrincipal?.fontes = { col ->
+            fun fonte(chaveItem: Any, x0: Float, y0: Float, x1: Float, y1: Float) {
+                val id = chaveItem as? String ?: return
+                val dom = CoresMidia.obter(id) ?: return
+                col.fonte(x0, y0, x1, y1, dom, CoresMidia.obterForte(id) ?: dom)
+            }
+            if (gradeExibida) {
+                estadoG.layoutInfo.visibleItemsInfo.forEach {
+                    fonte(it.key, it.offset.x.toFloat(), it.offset.y.toFloat(), (it.offset.x + it.size.width).toFloat(), (it.offset.y + it.size.height).toFloat())
+                }
+            } else {
+                val larg = luzPrincipal?.largura ?: 0f
+                estadoL.layoutInfo.visibleItemsInfo.forEach {
+                    fonte(it.key, 0f, it.offset.toFloat(), larg, (it.offset + it.size).toFloat())
+                }
+            }
+        }
+    }
+    DisposableEffect(luzPrincipal) {
+        onDispose {
+            luzPrincipal?.fontes = null
+            luzPrincipal?.movendo = { false }
+        }
+    }
+
     Box(Modifier.fillMaxSize()) {
         AnimatedContent(
             targetState = chave,
@@ -346,13 +394,39 @@ fun DriveScreen(
             aoMedir = { alturaTopo = it },
             modifier = Modifier.align(Alignment.TopCenter),
         ) {
-            Barra(vm, aoOrdem = { menuOrdem = true }, aoRenomear = { renomear = it }, aoCapa = { vm.abrirSeletorCapa(it) }) { confirmar = true }
+            Barra(vm, aoOrdem = { menuOrdem = true }, aoMenu = { menuHamburguer = true }, aoCapa = { vm.abrirSeletorCapa(it) }) { confirmar = true }
+            vm.operacao?.let { texto ->
+                PilulaVidro(Modifier.padding(horizontal = 12.dp)) {
+                    CircularProgressIndicator(Modifier.padding(start = 10.dp).size(18.dp), strokeWidth = 2.dp)
+                    Text(texto, Modifier.padding(horizontal = 10.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                }
+            }
             vm.erro?.let { msg ->
                 PilulaVidro(Modifier.padding(horizontal = 12.dp)) {
                     Text(msg, Modifier.padding(start = 10.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     TextButton(onClick = { vm.recarregar() }) { Text("Tentar de novo") }
                 }
             }
+        }
+        // Hambúrguer: mover, copiar e renomear (quando há seleção), criar pasta e enviar arquivos
+        MenuVidro(
+            aberto = menuHamburguer,
+            aoFechar = { menuHamburguer = false },
+            chave = vm.selecionados.size,
+            modifier = Modifier.align(Alignment.TopEnd)
+                .padding(top = contentPadding.calculateTopPadding() + 62.dp, end = 12.dp),
+        ) {
+            val cor = MaterialTheme.colorScheme.onSurface
+            if (vm.selecionados.isNotEmpty()) {
+                val unico = if (vm.selecionados.size == 1) vm.itens.firstOrNull { it.id in vm.selecionados } else null
+                ItemMenuVidro("Mover para…", { menuHamburguer = false; vm.abrirSeletorDestino(false) }, cor = cor, icone = Icons.Rounded.DriveFileMove)
+                ItemMenuVidro("Copiar para…", { menuHamburguer = false; vm.abrirSeletorDestino(true) }, cor = cor, icone = Icons.Rounded.ContentCopy)
+                if (unico != null) {
+                    ItemMenuVidro("Renomear", { menuHamburguer = false; renomear = unico }, cor = cor, icone = Icons.Rounded.Edit)
+                }
+            }
+            ItemMenuVidro("Criar pasta", { menuHamburguer = false; novaPasta = true }, cor = cor, icone = Icons.Rounded.CreateNewFolder)
+            ItemMenuVidro("Enviar arquivos", { menuHamburguer = false; escolherArquivos.launch("*/*") }, cor = cor, icone = Icons.Rounded.UploadFile)
         }
         MenuVidro(
             aberto = menuOrdem,
@@ -370,6 +444,17 @@ fun DriveScreen(
             }
         }
     }
+
+    if (novaPasta) {
+        DialogRenomear(
+            nomeAtual = "Nova pasta",
+            aoConfirmar = { nome -> novaPasta = false; vm.criarPasta(nome) },
+            aoCancelar = { novaPasta = false },
+            titulo = "Nova pasta",
+            rotuloConfirmar = "Criar",
+        )
+    }
+    if (vm.seletorDestino != null) SeletorDestino(vm)
 
     renomear?.let { f ->
         DialogRenomear(
@@ -412,13 +497,15 @@ fun DriveScreen(
 private fun Barra(
     vm: DriveViewModel,
     aoOrdem: () -> Unit,
-    aoRenomear: (DriveFile) -> Unit,
+    aoMenu: () -> Unit,
     aoCapa: (DriveFile) -> Unit,
     aoExcluir: () -> Unit,
 ) {
     val cor = MaterialTheme.colorScheme.onSurface
+    // altura fixa: a barra de edição (botões de 48 dp) e a normal (círculos de 46 dp) ocupam o mesmo espaço,
+    // então a lista não dá um pulinho quando a seleção começa ou termina
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).height(56.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -438,9 +525,9 @@ private fun Barra(
             PilulaVidro {
                 BotaoVidro(Icons.Rounded.StarBorder, "Favoritar", { vm.favoritarSelecao(vm.itens) }, cor)
                 BotaoVidro(Icons.Rounded.Download, "Baixar", { vm.baixarSelecionados() }, cor)
-                if (unico != null) BotaoVidro(Icons.Rounded.Edit, "Renomear", { aoRenomear(unico) }, cor)
                 if (unico != null && unico.isFolder) BotaoVidro(Icons.Rounded.AddPhotoAlternate, "Definir capa", { aoCapa(unico) }, cor)
                 BotaoVidro(Icons.Rounded.Delete, "Mover para a lixeira", aoExcluir, cor)
+                BotaoVidro(Icons.Rounded.Menu, "Mais ações: mover, copiar, renomear, criar pasta e enviar", aoMenu, cor)
             }
         } else if (vm.buscando) {
             val foco = remember { FocusRequester() }
@@ -472,7 +559,6 @@ private fun Barra(
                 CirculoVidro(aoClicar = { if (!TempoGaleria.fechando) vm.voltar() }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Voltar", tint = cor) }
             }
             Spacer(Modifier.weight(1f))
-            CirculoVidro(aoClicar = { vm.iniciarBusca() }) { Icon(Icons.Rounded.Search, "Buscar", tint = cor) }
             CirculoVidro(aoClicar = aoOrdem) { Icon(Icons.AutoMirrored.Rounded.Sort, "Ordenar", tint = cor) }
             CirculoVidro(aoClicar = { vm.alternarModo() }) {
                 Icon(
@@ -481,6 +567,7 @@ private fun Barra(
                     tint = cor,
                 )
             }
+            CirculoVidro(aoClicar = aoMenu) { Icon(Icons.Rounded.Menu, "Criar pasta e enviar arquivos", tint = cor) }
         }
     }
 }
@@ -698,11 +785,6 @@ private fun Miniatura(
         if (f.isFolder && capa != null) {
             // pasta com capa: a foto escolhida preenche o espaço, com um selo de pasta no canto
             if (!capaNoCard) CapaPasta(capa, token, f.name, Modifier.fillMaxSize())
-            Icon(
-                Icons.Rounded.Folder, "Pasta", tint = Color.White,
-                modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp)
-                    .background(Color.Black.copy(alpha = 0.55f), CircleShape).padding(3.dp).size(14.dp),
-            )
         } else if (!f.isFolder && (f.thumbnailLink != null || ehGif)) {
             // GIFs animam na miniatura, em baixa resolução e sem reduzir os quadros por segundo
             // GIF animado (ajuste ligado) vem do arquivo; senão usa a miniatura estática do Drive, que é bem mais leve
@@ -742,28 +824,36 @@ private fun Miniatura(
                 tint = if (f.isFolder) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        // indicadores: sempre na borda inferior esquerda, enfileirados (mídias privadas não têm indicador de link)
         val progresso = estado.progresso
-        if (progresso != null && progresso >= 0f) {
-            CircularProgressIndicator(
-                progress = { progresso },
-                modifier = Modifier.align(Alignment.BottomStart).padding(4.dp).size(20.dp),
-                strokeWidth = 2.dp,
-            )
-        } else if (estado.noCache) {
-            Icon(
-                Icons.Rounded.DownloadDone, "Salvo no cache", tint = Color.White,
-                modifier = Modifier.align(Alignment.BottomStart).padding(4.dp)
-                    .background(Color.Black.copy(alpha = 0.55f), CircleShape).padding(3.dp).size(14.dp),
-            )
-        }
-        if (estado.favorito) {
-            Icon(
-                Icons.Rounded.Star, "Favorito", tint = Color(0xFFFFC107),
-                modifier = Modifier.align(Alignment.TopStart).padding(4.dp)
-                    .background(Color.Black.copy(alpha = 0.55f), CircleShape).padding(3.dp).size(14.dp),
-            )
+        val comProgresso = progresso != null && progresso >= 0f
+        val capaDePasta = f.isFolder && estado.capa != null
+        if (capaDePasta || comProgresso || estado.noCache || estado.favorito || f.publico) {
+            Row(
+                Modifier.align(Alignment.BottomStart).padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (capaDePasta) Indicador(Icons.Rounded.Folder, "Pasta")
+                if (comProgresso) {
+                    CircularProgressIndicator(progress = { progresso!! }, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                } else if (estado.noCache) {
+                    Indicador(Icons.Rounded.DownloadDone, "Salvo no cache")
+                }
+                if (estado.favorito) Indicador(Icons.Rounded.Star, "Favorito", Color(0xFFFFC107))
+                if (f.publico) Indicador(Icons.Rounded.Link, "Qualquer pessoa com o link pode abrir")
+            }
         }
     }
+}
+
+/** Ícone pequeno sobre a miniatura, num círculo escuro translúcido. */
+@Composable
+private fun Indicador(icone: androidx.compose.ui.graphics.vector.ImageVector, descricao: String, tint: Color = Color.White) {
+    Icon(
+        icone, descricao, tint = tint,
+        modifier = Modifier.background(Color.Black.copy(alpha = 0.55f), CircleShape).padding(3.dp).size(14.dp),
+    )
 }
 
 /** Foto de capa de uma pasta, cortada para cobrir todo o espaço. [aoCarregar] avisa quando a imagem já apareceu. */
@@ -795,12 +885,16 @@ private class TintaMidia(val fundo: Color, val texto: Color, val tingido: Boolea
 @Composable
 private fun tintaMidia(f: DriveFile, neutro: Color, textoNeutro: Color): TintaMidia {
     val tema = MaterialTheme.colorScheme
+    // ajuste "Fundo dos cards": 0 cor da mídia, 1 neutro (sem cores), 2 miniatura desfocada (texto sempre branco)
+    val modo = LocalFundoCard.current
+    val midia = f.isImage || f.isVideo
     var dominante by remember(f.id) { mutableStateOf(CoresMidia.obter(f.id)) }
     // um toque de preto (22%) deixa o card mais escuro e o texto branco mais legível
-    val alvoFundo = dominante?.let { lerp(lerp(tema.surfaceVariant, it, 0.55f), Color.Black, 0.22f) } ?: neutro
+    val alvoFundo = if (modo != 0) neutro else dominante?.let { lerp(lerp(tema.surfaceVariant, it, 0.55f), Color.Black, 0.22f) } ?: neutro
     val fundo by animateColorAsState(alvoFundo, Animacoes.espec(tween(700), tween(150)), label = "corCard")
     val alvoTexto = when {
-        dominante == null -> textoNeutro
+        modo == 2 && midia && f.thumbnailLink != null -> Color.White
+        modo != 0 || dominante == null -> textoNeutro
         fundo.luminance() > 0.5f -> Color(0xFF1B1B1F)
         else -> Color.White
     }
@@ -815,7 +909,33 @@ private fun tintaMidia(f: DriveFile, neutro: Color, textoNeutro: Color): TintaMi
     } else {
         null
     }
-    return TintaMidia(fundo, texto, dominante != null, aoCor)
+    return TintaMidia(fundo, texto, (modo == 0 && dominante != null) || (modo == 2 && midia && f.thumbnailLink != null), aoCor)
+}
+
+/** Fundo de card no modo "miniatura desfocada": a miniatura invertida na vertical, bem borrada e escurecida. */
+@Composable
+private fun FundoMiniatura(f: DriveFile, token: String?, modifier: Modifier) {
+    val link = f.thumbnailLink ?: return
+    val context = LocalContext.current
+    val soCache = LocalMiniaturasSoCache.current
+    val pedido = remember(f.id, link, token, soCache) {
+        ImageRequest.Builder(context)
+            .data(link)
+            .apply { if (token != null) addHeader("Authorization", "Bearer $token") }
+            .size(32, 32) // miniatura minúscula esticada pelo card: o próprio escalonamento borra forte
+            .diskCacheKey("miniatura-thumb-${f.id}-${f.modifiedTime}")
+            .memoryCacheKey("fundo-${f.id}-${f.modifiedTime}")
+            .networkCachePolicy(if (soCache) CachePolicy.DISABLED else CachePolicy.ENABLED)
+            .build()
+    }
+    Box(modifier) {
+        AsyncImage(
+            pedido, null,
+            Modifier.matchParentSize().graphicsLayer { scaleY = -1f },
+            contentScale = ContentScale.Crop,
+        )
+        Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.5f)))
+    }
 }
 
 /**
@@ -867,6 +987,8 @@ internal fun ItemGrade(
     ) {
         if (capaPasta != null) {
             CapaPasta(capaPasta, token, f.name, Modifier.matchParentSize(), aoCarregar = { capaPronta = true })
+        } else if (LocalFundoCard.current == 2 && (f.isImage || f.isVideo)) {
+            FundoMiniatura(f, token, Modifier.matchParentSize())
         }
         Column {
             Box(Modifier.fillMaxWidth().aspectRatio(1f).then(origemMiniatura)) {
@@ -925,7 +1047,7 @@ internal fun ItemLinha(
     }
     val fundo = if (selecionado) tema.primaryContainer else tinta.fundo
     val corNome = if (selecionado) tema.onPrimaryContainer else tinta.texto
-    Row(
+    Box(
         Modifier.fillMaxWidth()
             .padding(horizontal = 4.dp, vertical = 2.dp)
             .clip(forma)
@@ -933,8 +1055,13 @@ internal fun ItemLinha(
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = { if (vibrar) haptico.performHapticFeedback(HapticFeedbackType.LongPress); onLongClick() },
-            )
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            ),
+    ) {
+    if (!selecionado && LocalFundoCard.current == 2 && (f.isImage || f.isVideo)) {
+        FundoMiniatura(f, token, Modifier.matchParentSize())
+    }
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Miniatura(
@@ -954,6 +1081,7 @@ internal fun ItemLinha(
         if (selecionado) {
             Icon(Icons.Rounded.CheckCircle, "Selecionado", tint = MaterialTheme.colorScheme.primary)
         }
+    }
     }
 }
 
