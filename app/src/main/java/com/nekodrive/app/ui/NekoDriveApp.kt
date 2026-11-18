@@ -235,6 +235,7 @@ fun NekoDriveApp() {
         LocalMiniaturasSoCache provides (vm.miniaturasSoWifi && !redeWifi),
         LocalReflexoPilula provides vm.reflexoPilula,
         LocalFundoCard provides vm.fundoCard,
+        LocalRenovarCapa provides vm::renovarCapaVideo,
         LocalMarqueePausado provides (vm.visualizador != null || congelarNomes),
     ) {
         Surface(
