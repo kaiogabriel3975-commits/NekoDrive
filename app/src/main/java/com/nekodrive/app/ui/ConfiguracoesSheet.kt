@@ -3,7 +3,9 @@ package com.nekodrive.app.ui
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -70,15 +72,17 @@ private fun <T> LinhaOpcoes(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** Configurações como tela própria (destino da toolbar). [padding] deixa o conteúdo livre do cabeçalho e da toolbar. */
 @Composable
-fun ConfiguracoesSheet(vm: DriveViewModel, onContas: () -> Unit, onFechar: () -> Unit) {
+fun ConfiguracoesTela(vm: DriveViewModel, padding: PaddingValues, onContas: () -> Unit) {
     var limite by remember { mutableFloatStateOf(vm.limiteGb.toFloat()) }
     val usado = remember(vm.versaoCache) { vm.tamanhoCache() }
 
-    ModalBottomSheet(onDismissRequest = onFechar) {
+    run {
         Column(
-            Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 32.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(top = padding.calculateTopPadding() + 12.dp, bottom = padding.calculateBottomPadding() + 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text("Configurações", style = MaterialTheme.typography.titleLarge)
@@ -110,9 +114,27 @@ fun ConfiguracoesSheet(vm: DriveViewModel, onContas: () -> Unit, onFechar: () ->
                     vm.definirBlurIntensidade(it)
                 }
             }
-            LinhaSwitch("Reflexos nas pílulas da galeria", "Contorno com reflexos sutis nas cores da mídia", vm.reflexoPilula) {
+            LinhaSwitch("Reflexos de luz", "O vidro é iluminado pela mídia que está por perto, na cor dela", vm.reflexoPilula) {
                 vm.definirReflexoPilula(it)
             }
+            if (vm.reflexoPilula) {
+                LinhaSwitch(
+                    "Luz só nas toolbars",
+                    "Ligado: só na pílula da galeria, na do player de vídeo, na toolbar principal e na busca. " +
+                        "Desligado: em todas as peças de vidro com reflexo",
+                    vm.reflexoSoToolbars,
+                ) { vm.definirReflexoSoToolbars(it) }
+            }
+            LinhaOpcoes(
+                "Fundo dos cards de mídia",
+                listOf("Cor da mídia" to 0, "Sem cores" to 1, "Miniatura desfocada" to 2),
+                vm.fundoCard,
+                descricao = when (vm.fundoCard) {
+                    1 -> "Cards neutros, sem a cor da mídia"
+                    2 -> "A miniatura invertida na vertical, com blur forte e escurecida"
+                    else -> "O card pega a cor que mais aparece na mídia"
+                },
+            ) { vm.definirFundoCard(it) }
 
             Secao("Animações e toque")
             LinhaOpcoes(
@@ -165,7 +187,7 @@ fun ConfiguracoesSheet(vm: DriveViewModel, onContas: () -> Unit, onFechar: () ->
             ) { vm.definirControlesMs(it) }
 
             Secao("Conta")
-            TextButton(onClick = { onFechar(); onContas() }) { Text("Gerenciar contas") }
+            TextButton(onClick = onContas) { Text("Gerenciar contas") }
 
             Secao("Cache de vídeos e fotos")
             Text(
