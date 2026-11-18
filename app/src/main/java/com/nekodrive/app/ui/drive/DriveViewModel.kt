@@ -18,6 +18,7 @@ import com.nekodrive.app.data.Progresso
 import com.nekodrive.app.data.auth.GoogleAccount
 import com.nekodrive.app.data.drive.ArquivoDePasta
 import com.nekodrive.app.data.drive.DriveFile
+import com.nekodrive.app.data.drive.DrivePage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -103,6 +104,8 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     var colunas by mutableIntStateOf(c.prefs.colunas); private set
     var blurIntensidade by mutableIntStateOf(c.prefs.blurIntensidade); private set
     var reflexoPilula by mutableStateOf(c.prefs.reflexoPilula); private set
+    var reflexoSoToolbars by mutableStateOf(c.prefs.reflexoSoToolbars); private set
+    var fundoCard by mutableIntStateOf(c.prefs.fundoCard); private set
     var pastasPrimeiro by mutableStateOf(c.prefs.pastasPrimeiro); private set
     var mostrarNomes by mutableStateOf(c.prefs.mostrarNomes); private set
     var miniaturasSoWifi by mutableStateOf(c.prefs.miniaturasSoWifi); private set
@@ -125,6 +128,8 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     fun definirColunas(v: Int) { colunas = v; c.prefs.colunas = v }
     fun definirBlurIntensidade(v: Int) { blurIntensidade = v; c.prefs.blurIntensidade = v }
     fun definirReflexoPilula(v: Boolean) { reflexoPilula = v; c.prefs.reflexoPilula = v }
+    fun definirReflexoSoToolbars(v: Boolean) { reflexoSoToolbars = v; c.prefs.reflexoSoToolbars = v }
+    fun definirFundoCard(v: Int) { fundoCard = v; c.prefs.fundoCard = v }
     fun definirMostrarNomes(v: Boolean) { mostrarNomes = v; c.prefs.mostrarNomes = v }
     fun definirMiniaturasSoWifi(v: Boolean) { miniaturasSoWifi = v; c.prefs.miniaturasSoWifi = v }
     fun definirVibrar(v: Boolean) { vibrar = v; c.prefs.vibrar = v }
@@ -733,6 +738,127 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
             detalhes = detalhes?.map { if (it.first == "Nome no Drive") it.first to nome else it }
         }
         versaoCache++
+    }
+
+    // ---------- mover, copiar, criar pasta e enviar ----------
+
+    /** Escolha de destino aberta: false = mover, true = copiar, null = fechada. */
+    var seletorDestino by mutableStateOf<Boolean?>(null); private set
+
+    /** Itens que serão movidos/copiados (o seletor não deixa entrar numa pasta que está entre eles). */
+    var alvosDestino by mutableStateOf<List<DriveFile>>(emptyList()); private set
+
+    /** Texto do que está acontecendo em segundo plano (envio, cópia ou movimentação); null se nada. */
+    var operacao by mutableStateOf<String?>(null); private set
+
+    fun abrirSeletorDestino(copiar: Boolean) {
+        val alvos = itens.filter { it.id in selecionados }
+        if (alvos.isEmpty()) return
+        alvosDestino = alvos
+        seletorDestino = copiar
+    }
+
+    fun fecharSeletorDestino() { seletorDestino = null }
+
+    /** Pastas dentro de [idPai], para o seletor de destino. */
+    suspend fun pastasDe(idPai: String, pagina: String?): DrivePage =
+        contaAtual?.let { c.drive.pastasDe(it.email, idPai, pagina) } ?: DrivePage(emptyList(), null)
+
+    fun confirmarDestino(idDestino: String, nomeDestino: String) {
+        val copiar = seletorDestino ?: return
+        val conta = contaAtual ?: return
+        val alvos = alvosDestino
+        seletorDestino = null
+        viewModelScope.launch {
+            var feitos = 0
+            var falhas = 0
+            alvos.forEachIndexed { i, f ->
+                operacao = (if (copiar) "Copiando" else "Movendo") + " ${i + 1}/${alvos.size}: ${f.name}"
+                try {
+                    if (copiar) c.drive.copiar(conta.email, f, idDestino) else c.drive.mover(conta.email, f.id, idDestino)
+                    feitos++
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    falhas++
+                    erro = "Não foi possível ${if (copiar) "copiar" else "mover"} ${f.name}: ${e.message}"
+                }
+            }
+            operacao = null
+            if (feitos > 0) {
+                aviso = "$feitos item(ns) ${if (copiar) "copiado(s)" else "movido(s)"} para $nomeDestino" +
+                    if (falhas > 0) " ($falhas com erro)" else ""
+                limparSelecao()
+                versaoCache++
+                recarregar()
+            }
+        }
+    }
+
+    fun criarPasta(nome: String) {
+        val conta = contaAtual ?: return
+        val limpo = nome.trim()
+        if (limpo.isEmpty()) return
+        val pai = pilha.last().id
+        viewModelScope.launch {
+            try {
+                c.drive.criarPasta(conta.email, limpo, pai)
+                aviso = "Pasta \"$limpo\" criada"
+                recarregar()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                erro = "Não foi possível criar a pasta: ${e.message}"
+            }
+        }
+    }
+
+    /** Envia os arquivos escolhidos para a pasta aberta. */
+    fun enviarArquivos(uris: List<android.net.Uri>) {
+        val conta = contaAtual ?: return
+        if (uris.isEmpty()) return
+        val pai = pilha.last().id
+        viewModelScope.launch {
+            var ok = 0
+            uris.forEachIndexed { i, uri ->
+                var nome = "arquivo"
+                var tamanho = -1L
+                runCatching {
+                    c.resolver.query(uri, null, null, null, null)?.use { cur ->
+                        if (cur.moveToFirst()) {
+                            val iNome = cur.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                            val iTam = cur.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                            if (iNome >= 0) nome = cur.getString(iNome) ?: nome
+                            if (iTam >= 0 && !cur.isNull(iTam)) tamanho = cur.getLong(iTam)
+                        }
+                    }
+                }
+                val mime = c.resolver.getType(uri) ?: "application/octet-stream"
+                val prefixo = "Enviando ${i + 1}/${uris.size}: $nome"
+                operacao = prefixo
+                var ultimo = -1
+                try {
+                    c.drive.enviar(
+                        conta.email, nome, mime, tamanho, pai,
+                        abrir = { c.resolver.openInputStream(uri) ?: throw java.io.IOException("Não foi possível ler $nome") },
+                        aoProgresso = { p ->
+                            val pct = (p * 100).toInt()
+                            if (pct != ultimo) { ultimo = pct; operacao = "$prefixo ($pct%)" }
+                        },
+                    )
+                    ok++
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    erro = "Falha ao enviar $nome: ${e.message}"
+                }
+            }
+            operacao = null
+            if (ok > 0) {
+                aviso = "$ok arquivo(s) enviado(s)"
+                recarregar()
+            }
+        }
     }
 
     // ---------- capa de pasta ----------
