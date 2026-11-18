@@ -28,6 +28,14 @@ import com.nekodrive.app.ui.drive.CoresImagem
 import com.nekodrive.app.ui.drive.CoresMidia
 import com.nekodrive.app.ui.drive.ProporcoesMidia
 import kotlinx.coroutines.delay
+import androidx.compose.ui.graphics.Shader
+import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.SweepGradientShader
+import androidx.compose.ui.graphics.lerp
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.hypot
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.pow
@@ -247,12 +255,26 @@ private fun pincel(s: Int, w: Float, h: Float, a: Color, b: Color, fim: Color): 
     }
 }
 
+/** Gradiente em varredura (ao redor do centro) girado em [graus]: a posição 0 do gradiente aponta para [graus]. */
+private fun varredura(centro: Offset, graus: Float, cores: List<Color>, paradas: List<Float>): Brush =
+    object : ShaderBrush() {
+        override fun createShader(size: Size): Shader {
+            val sh = SweepGradientShader(centro, cores, paradas)
+            sh.setLocalMatrix(android.graphics.Matrix().apply { postRotate(graus, centro.x, centro.y) })
+            return sh
+        }
+    }
+
 /**
- * Vidro iluminado pela mídia, no estilo dos reflexos de vidro da Apple: aro fino de vidro sempre presente,
- * brilho de topo, e em cada lado que recebe luz um aro claro (com a cor mais forte do ambiente) que se dissolve
- * para dentro na cor mais presente, um halo suave, uma linha especular logo abaixo da borda e luz refratada no
- * lado oposto. A força vem da distância até a mídia e muda aos poucos (ao deslizar entre mídias, ao rolar a
- * lista e a cada amostra do vídeo tocando). [canto] é o raio dos cantos (null = pílula/círculo).
+ * Vidro no estilo "liquid glass" da Apple, iluminado pela mídia. Camadas, de baixo para cima:
+ *  1. película: um brilho difuso e translúcido que vem da direção da luz;
+ *  2. luz colorida do ambiente: cada lado que a mídia ilumina acende com a cor dela (como antes);
+ *  3. aro especular: dois lóbulos de brilho opostos ao longo da borda, o principal virado para a luz e o outro
+ *     (mais fraco) no lado contrário, que se concentram nas pontas arredondadas e somem pelas retas, em três
+ *     espessuras (halo, corpo e fio), que é o que dá o ar de vidro grosso e polido.
+ * A direção dos lóbulos acompanha de onde vem a luz (padrão: canto superior esquerdo) e a força cresce com a
+ * proximidade da mídia. A refração real do fundo (lente nas bordas) não é feita: exigiria um shader AGSL
+ * (Android 13+) aplicado ao fundo desfocado. [canto] é o raio dos cantos (null = pílula/círculo).
  */
 @Composable
 fun Modifier.reflexoLuz(amb: AmbienteLuz, canto: Dp? = null): Modifier {
@@ -288,48 +310,87 @@ fun Modifier.reflexoLuz(amb: AmbienteLuz, canto: Dp? = null): Modifier {
             val w = size.width
             val h = size.height
             val raio = canto?.toPx() ?: (minOf(w, h) / 2f)
-            val fio = 1.dp.toPx()
+            val centro = Offset(w / 2f, h / 2f)
             fun forma(inset: Float) = CornerRadius((raio - inset).coerceAtLeast(0f))
-            // aro de vidro e brilho de topo, mesmo sem luz nenhuma
+
+            // de onde vem a luz: soma dos lados acesos, com um empurrãozinho para o canto superior esquerdo
+            var forte = 0
+            for (s in 1..3) if (luz.forca[s] > luz.forca[forte]) forte = s
+            val intensidade = luz.forca[forte].coerceIn(0f, 1f)
+            val lx = (luz.forca[1] - luz.forca[3]) - 0.12f
+            val ly = (luz.forca[2] - luz.forca[0]) - 0.12f
+            val rad = atan2(ly, lx)
+            val graus = Math.toDegrees(rad.toDouble()).toFloat()
+            val ti = forte * 3
+            val tom = Color(clarear(luz.nucleo[ti], 0.5f), clarear(luz.nucleo[ti + 1], 0.5f), clarear(luz.nucleo[ti + 2], 0.5f))
+            val branco = lerp(Color.White, tom, 0.35f * intensidade) // o brilho especular herda um pouco da cor do ambiente
+
+            // 1) película: brilho difuso vindo da direção da luz
+            val dx = cos(rad)
+            val dy = sin(rad)
+            val meia = hypot(w, h) / 2f
             drawRoundRect(
-                Color.White.copy(alpha = 0.10f),
-                topLeft = Offset(fio / 2f, fio / 2f), size = Size(w - fio, h - fio),
-                cornerRadius = forma(fio / 2f), style = Stroke(fio),
-            )
-            drawRoundRect(
-                Brush.verticalGradient(
-                    0f to Color.White.copy(alpha = 0.06f + 0.05f * luz.forca[0]),
-                    0.55f to Color.White.copy(alpha = 0f),
-                    startY = 0f, endY = h,
+                Brush.linearGradient(
+                    0f to branco.copy(alpha = 0.16f + 0.10f * intensidade),
+                    0.55f to branco.copy(alpha = 0f),
+                    start = Offset(centro.x + dx * meia, centro.y + dy * meia),
+                    end = Offset(centro.x - dx * meia, centro.y - dy * meia),
                 ),
                 cornerRadius = forma(0f),
             )
+
+            // 2) luz colorida: cada lado que a mídia ilumina acende na cor dela
             for (s in 0..3) {
                 val f = luz.forca[s].coerceAtMost(1f)
                 if (f < 0.02f) continue
                 val i = s * 3
-                val n = Color(clarear(luz.nucleo[i], 0.55f), clarear(luz.nucleo[i + 1], 0.55f), clarear(luz.nucleo[i + 2], 0.55f), f * 0.95f)
+                val n = Color(clarear(luz.nucleo[i], 0.55f), clarear(luz.nucleo[i + 1], 0.55f), clarear(luz.nucleo[i + 2], 0.55f), f * 0.85f)
                 val c = Color(clarear(luz.corpo[i], 0.3f), clarear(luz.corpo[i + 1], 0.3f), clarear(luz.corpo[i + 2], 0.3f), f * 0.55f)
                 val pinc = pincel(s, w, h, n, c, c.copy(alpha = 0f))
-                val halo = 3.5.dp.toPx()
-                val aro = 1.3.dp.toPx()
-                drawRoundRect(pinc, cornerRadius = forma(0f), alpha = 0.10f) // brilho suave dentro do vidro
+                val halo = 5.dp.toPx()
+                val aro = 1.dp.toPx()
+                drawRoundRect(pinc, cornerRadius = forma(0f), alpha = 0.09f)
                 drawRoundRect(
                     pinc, topLeft = Offset(halo / 2f, halo / 2f), size = Size(w - halo, h - halo),
-                    cornerRadius = forma(halo / 2f), style = Stroke(halo), alpha = 0.28f,
+                    cornerRadius = forma(halo / 2f), style = Stroke(halo), alpha = 0.22f,
                 )
                 drawRoundRect(
                     pinc, topLeft = Offset(aro / 2f, aro / 2f), size = Size(w - aro, h - aro),
-                    cornerRadius = forma(aro / 2f), style = Stroke(aro),
-                )
-                // linha especular: reflexo branco bem fino logo abaixo da borda, dando espessura ao vidro
-                val esp = Color.White.copy(alpha = 0.5f * f)
-                val pesp = pincel(s, w, h, esp, esp.copy(alpha = 0.18f * f), esp.copy(alpha = 0f))
-                val ins = 2.2.dp.toPx()
-                drawRoundRect(
-                    pesp, topLeft = Offset(ins, ins), size = Size(w - 2 * ins, h - 2 * ins),
-                    cornerRadius = forma(ins), style = Stroke(0.8.dp.toPx()),
+                    cornerRadius = forma(aro / 2f), style = Stroke(aro), alpha = 0.8f,
                 )
             }
+
+            // 3) aro especular: lóbulo principal virado para a luz e outro, mais fraco, no lado oposto
+            val a1 = 0.55f + 0.40f * intensidade
+            val a2 = 0.25f + 0.30f * intensidade
+            fun b(a: Float) = branco.copy(alpha = a.coerceIn(0f, 1f))
+            val pincelEspecular = varredura(
+                centro, graus,
+                listOf(
+                    b(a1), b(a1 * 0.55f), b(a1 * 0.12f), b(0f), b(0f), b(a2 * 0.12f), b(a2 * 0.55f), b(a2),
+                    b(a2 * 0.55f), b(a2 * 0.12f), b(0f), b(0f), b(a1 * 0.12f), b(a1 * 0.55f), b(a1),
+                ),
+                listOf(0f, 0.05f, 0.12f, 0.20f, 0.30f, 0.38f, 0.45f, 0.50f, 0.55f, 0.62f, 0.70f, 0.80f, 0.88f, 0.95f, 1f),
+            )
+            val fio = 1.1.dp.toPx()
+            val corpo = 2.2.dp.toPx()
+            val halo = 4.5.dp.toPx()
+            drawRoundRect(
+                pincelEspecular, topLeft = Offset(halo / 2f, halo / 2f), size = Size(w - halo, h - halo),
+                cornerRadius = forma(halo / 2f), style = Stroke(halo), alpha = 0.20f,
+            )
+            drawRoundRect(
+                pincelEspecular, topLeft = Offset(corpo / 2f, corpo / 2f), size = Size(w - corpo, h - corpo),
+                cornerRadius = forma(corpo / 2f), style = Stroke(corpo), alpha = 0.45f,
+            )
+            drawRoundRect(
+                pincelEspecular, topLeft = Offset(fio / 2f, fio / 2f), size = Size(w - fio, h - fio),
+                cornerRadius = forma(fio / 2f), style = Stroke(fio),
+            )
+            // fio de vidro bem discreto em todo o contorno, mesmo longe dos lóbulos
+            drawRoundRect(
+                Color.White.copy(alpha = 0.09f), topLeft = Offset(fio / 2f, fio / 2f), size = Size(w - fio, h - fio),
+                cornerRadius = forma(fio / 2f), style = Stroke(fio),
+            )
         }
 }
