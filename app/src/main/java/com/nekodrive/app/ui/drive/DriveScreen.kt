@@ -107,6 +107,7 @@ import com.nekodrive.app.ui.Animacoes
 import com.nekodrive.app.ui.DialogRenomear
 import com.nekodrive.app.ui.LocalAnimarGifs
 import com.nekodrive.app.ui.LocalFundoCard
+import com.nekodrive.app.ui.LocalRenovarCapa
 import com.nekodrive.app.ui.LocalMiniaturasSoCache
 import com.nekodrive.app.ui.LocalMostrarNomes
 import com.nekodrive.app.ui.LocalVibrar
@@ -784,7 +785,7 @@ private fun Miniatura(
         val capa = estado.capa
         if (f.isFolder && capa != null) {
             // pasta com capa: a foto escolhida preenche o espaço, com um selo de pasta no canto
-            if (!capaNoCard) CapaPasta(capa, token, f.name, Modifier.fillMaxSize())
+            if (!capaNoCard) CapaPasta(capa, token, f.name, Modifier.fillMaxSize(), link = estado.capaLink)
         } else if (!f.isFolder && (f.thumbnailLink != null || ehGif)) {
             // GIFs animam na miniatura, em baixa resolução e sem reduzir os quadros por segundo
             // GIF animado (ajuste ligado) vem do arquivo; senão usa a miniatura estática do Drive, que é bem mais leve
@@ -858,13 +859,22 @@ private fun Indicador(icone: androidx.compose.ui.graphics.vector.ImageVector, de
 
 /** Foto de capa de uma pasta, cortada para cobrir todo o espaço. [aoCarregar] avisa quando a imagem já apareceu. */
 @Composable
-private fun CapaPasta(capa: String, token: String?, nome: String, modifier: Modifier, aoCarregar: () -> Unit = {}) {
+private fun CapaPasta(
+    capa: String,
+    token: String?,
+    nome: String,
+    modifier: Modifier,
+    aoCarregar: () -> Unit = {},
+    link: String? = null, // capa em vídeo: miniatura que o Drive gera (foto: baixa o arquivo)
+    idPasta: String? = null,
+) {
     val context = LocalContext.current
     val soCache = LocalMiniaturasSoCache.current
     val semAnimacao = Animacoes.sem
-    val pedido = remember(capa, token, soCache, semAnimacao) {
+    val renovar = LocalRenovarCapa.current
+    val pedido = remember(capa, link, token, soCache, semAnimacao) {
         ImageRequest.Builder(context)
-            .data("https://www.googleapis.com/drive/v3/files/$capa?alt=media")
+            .data(link ?: "https://www.googleapis.com/drive/v3/files/$capa?alt=media")
             .apply { if (token != null) addHeader("Authorization", "Bearer $token") }
             .size(480, 480)
             .diskCacheKey("capa-$capa")
@@ -873,7 +883,11 @@ private fun CapaPasta(capa: String, token: String?, nome: String, modifier: Modi
             .crossfade(!semAnimacao)
             .build()
     }
-    AsyncImage(pedido, nome, modifier, contentScale = ContentScale.Crop, onSuccess = { aoCarregar() })
+    AsyncImage(
+        pedido, nome, modifier, contentScale = ContentScale.Crop,
+        onSuccess = { aoCarregar() },
+        onError = { if (link != null && idPasta != null) renovar(idPasta) },
+    )
 }
 
 /** Sombra sutil do texto sobre a capa de uma pasta. */
@@ -986,7 +1000,7 @@ internal fun ItemGrade(
             ),
     ) {
         if (capaPasta != null) {
-            CapaPasta(capaPasta, token, f.name, Modifier.matchParentSize(), aoCarregar = { capaPronta = true })
+            CapaPasta(capaPasta, token, f.name, Modifier.matchParentSize(), aoCarregar = { capaPronta = true }, link = estado.capaLink, idPasta = f.id)
         } else if (LocalFundoCard.current == 2 && (f.isImage || f.isVideo)) {
             FundoMiniatura(f, token, Modifier.matchParentSize())
         }
