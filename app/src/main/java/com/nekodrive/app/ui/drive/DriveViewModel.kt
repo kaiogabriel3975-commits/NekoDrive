@@ -42,8 +42,10 @@ data class EstadoArquivo(
     val assistido: Boolean,
     val progresso: Float?,
     val favorito: Boolean = false,
-    /** Id da foto escolhida como capa (só para pastas). */
+    /** Id da foto ou do vídeo escolhido como capa (só para pastas). */
     val capa: String? = null,
+    /** Miniatura do vídeo usada como capa; null quando a capa é uma foto. */
+    val capaLink: String? = null,
 )
 
 /** Pastas escolhidas para baixar: o que foi encontrado dentro delas e o quanto isso pesa. */
@@ -604,7 +606,8 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
             assistido = f.isVideo && c.playback.obter(conta.email, f.id)?.assistido == true,
             progresso = progressos[f.id],
             favorito = f.id in favoritosIds,
-            capa = if (f.isFolder) capas[f.id] else null,
+            capa = if (f.isFolder) capas[f.id]?.let { idDaCapa(it) } else null,
+            capaLink = if (f.isFolder) capas[f.id]?.let { linkDaCapa(it) } else null,
         )
     }
 
@@ -865,6 +868,32 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
 
     fun capaDe(idPasta: String): String? = capas[idPasta]
 
+    // capa guardada como "ID" (foto) ou "v:ID|LINK" (vídeo, com a miniatura do Drive)
+    private fun idDaCapa(valor: String) = if (valor.startsWith("v:")) valor.substring(2).substringBefore('|') else valor
+    private fun linkDaCapa(valor: String) = if (valor.startsWith("v:")) valor.substringAfter('|', "").ifEmpty { null } else null
+
+    private val capasRenovadas = mutableSetOf<String>()
+
+    /** O link da miniatura de um vídeo expira: se a capa não carregar, busca um novo (uma vez por pasta e sessão). */
+    fun renovarCapaVideo(idPasta: String) {
+        val conta = contaAtual ?: return
+        val valor = capas[idPasta] ?: return
+        if (!valor.startsWith("v:") || !capasRenovadas.add(idPasta)) return
+        val idVideo = idDaCapa(valor)
+        viewModelScope.launch {
+            try {
+                val novo = c.drive.arquivo(conta.email, idVideo)?.thumbnailLink ?: return@launch
+                capas[idPasta] = "v:$idVideo|$novo"
+                c.capas.salvar(conta.email, capas.toMap())
+                versaoCache++
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // sem rede ou vídeo removido: a pasta fica com o card normal
+            }
+        }
+    }
+
     fun abrirSeletorCapa(pasta: DriveFile) {
         val conta = contaAtual ?: return
         jobCapa?.cancel()
@@ -909,7 +938,15 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     fun escolherCapa(foto: DriveFile?) {
         val conta = contaAtual ?: return
         val pasta = pastaDaCapa ?: return
-        if (foto == null) capas.remove(pasta.id) else capas[pasta.id] = foto.id
+        if (foto == null) {
+            capas.remove(pasta.id)
+        } else if (foto.isVideo) {
+            val link = foto.thumbnailLink
+            if (link == null) { aviso = "Este vídeo ainda não tem miniatura no Drive."; return }
+            capas[pasta.id] = "v:${foto.id}|$link"
+        } else {
+            capas[pasta.id] = foto.id
+        }
         c.capas.salvar(conta.email, capas.toMap())
         versaoCache++
         fecharSeletorCapa()
