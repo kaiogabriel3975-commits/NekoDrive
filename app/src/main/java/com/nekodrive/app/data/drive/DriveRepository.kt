@@ -23,6 +23,8 @@ data class DriveFile(
     val size: Long?,
     val modifiedTime: String?,
     val thumbnailLink: String?,
+    /** Qualquer pessoa com o link consegue abrir (mídias privadas ficam sem indicador). */
+    val publico: Boolean = false,
 ) {
     val isFolder get() = mimeType == "application/vnd.google-apps.folder"
     val isImage get() = mimeType.startsWith("image/")
@@ -57,26 +59,139 @@ class DriveRepository(private val auth: AuthManager) {
         comToken(email) { token ->
             val url = (api + "files").toHttpUrl().newBuilder()
                 .addQueryParameter("q", consulta)
-                .addQueryParameter("fields", "nextPageToken,files(id,name,mimeType,size,modifiedTime,thumbnailLink)")
+                .addQueryParameter("fields", "nextPageToken,files(id,name,mimeType,size,modifiedTime,thumbnailLink,permissionIds)")
                 .addQueryParameter("orderBy", ordem)
                 .addQueryParameter("pageSize", "100")
                 .apply { if (pageToken != null) addQueryParameter("pageToken", pageToken) }
                 .build()
             val json = JSONObject(get(token, url))
             val arr = json.optJSONArray("files")
-            val files = (0 until (arr?.length() ?: 0)).map { i ->
-                val o = arr!!.getJSONObject(i)
-                DriveFile(
-                    id = o.getString("id"),
-                    name = o.optString("name"),
-                    mimeType = o.optString("mimeType"),
-                    size = o.optString("size").toLongOrNull(),
-                    modifiedTime = o.optString("modifiedTime").ifEmpty { null },
-                    thumbnailLink = o.optString("thumbnailLink").ifEmpty { null },
-                )
-            }
+            val files = (0 until (arr?.length() ?: 0)).map { i -> arr!!.getJSONObject(i).paraArquivo() }
             DrivePage(files, json.optString("nextPageToken").ifEmpty { null })
         }
+
+    private fun JSONObject.paraArquivo(): DriveFile {
+        val ids = optJSONArray("permissionIds")
+        val publico = (0 until (ids?.length() ?: 0)).any {
+            val id = ids!!.optString(it)
+            id == "anyoneWithLink" || id == "anyone"
+        }
+        return DriveFile(
+            id = getString("id"),
+            name = optString("name"),
+            mimeType = optString("mimeType"),
+            size = optString("size").toLongOrNull(),
+            modifiedTime = optString("modifiedTime").ifEmpty { null },
+            thumbnailLink = optString("thumbnailLink").ifEmpty { null },
+            publico = publico,
+        )
+    }
+
+    /** Pastas que estão diretamente dentro de [idPai] (para escolher o destino de mover/copiar). */
+    suspend fun pastasDe(email: String, idPai: String, pagina: String?): DrivePage =
+        list(email, "'$idPai' in parents and trashed = false and mimeType = 'application/vnd.google-apps.folder'", "name_natural", pagina)
+
+    /** Cria uma pasta dentro de [idPai]. */
+    suspend fun criarPasta(email: String, nome: String, idPai: String): DriveFile = comToken(email) { token ->
+        val corpo = JSONObject().put("name", nome).put("mimeType", "application/vnd.google-apps.folder")
+            .put("parents", JSONArray().put(idPai)).toString().toRequestBody("application/json".toMediaType())
+        val url = (api + "files").toHttpUrl().newBuilder().addQueryParameter("fields", "id,name,mimeType,modifiedTime").build()
+        JSONObject(executar(Request.Builder().url(url).post(corpo).header("Authorization", "Bearer $token").build())).paraArquivo()
+    }
+
+    /** Move um arquivo ou pasta para [idDestino] (sai de todas as pastas em que estava). */
+    suspend fun mover(email: String, id: String, idDestino: String) {
+        comToken(email) { token ->
+            val urlPais = (api + "files/" + id).toHttpUrl().newBuilder().addQueryParameter("fields", "parents").build()
+            val pais = JSONObject(get(token, urlPais)).optJSONArray("parents")
+            val atuais = (0 until (pais?.length() ?: 0)).map { pais!!.getString(it) }.filter { it != idDestino }
+            val url = (api + "files/" + id).toHttpUrl().newBuilder()
+                .addQueryParameter("addParents", idDestino)
+                .apply { if (atuais.isNotEmpty()) addQueryParameter("removeParents", atuais.joinToString(",")) }
+                .addQueryParameter("fields", "id")
+                .build()
+            executar(
+                Request.Builder().url(url).patch("{}".toRequestBody("application/json".toMediaType()))
+                    .header("Authorization", "Bearer $token").build(),
+            )
+        }
+    }
+
+    /**
+     * Copia um arquivo para [idDestino]. O Drive não copia pastas: uma pasta vira uma pasta nova com cópias
+     * de tudo que está dentro (chamando [aoCopiar] a cada arquivo copiado).
+     */
+    suspend fun copiar(email: String, f: DriveFile, idDestino: String, aoCopiar: () -> Unit = {}) {
+        if (!f.isFolder) {
+            comToken(email) { token ->
+                val corpo = JSONObject().put("parents", JSONArray().put(idDestino)).toString()
+                    .toRequestBody("application/json".toMediaType())
+                val url = (api + "files/" + f.id + "/copy").toHttpUrl().newBuilder().addQueryParameter("fields", "id").build()
+                executar(Request.Builder().url(url).post(corpo).header("Authorization", "Bearer $token").build())
+            }
+            aoCopiar()
+            return
+        }
+        val nova = criarPasta(email, f.name, idDestino)
+        var pagina: String? = null
+        do {
+            val p = list(email, "'${f.id}' in parents and trashed = false", "folder,name_natural", pagina)
+            p.files.forEach { copiar(email, it, nova.id, aoCopiar) }
+            pagina = p.nextPageToken
+        } while (pagina != null)
+    }
+
+    /** Envia um arquivo para [idPai] (envio retomável, em fluxo: não carrega o arquivo inteiro na memória). */
+    suspend fun enviar(
+        email: String,
+        nome: String,
+        mime: String,
+        tamanho: Long,
+        idPai: String,
+        abrir: () -> java.io.InputStream,
+        aoProgresso: (Float) -> Unit,
+    ) {
+        comToken(email) { token ->
+            val cliente = http.newBuilder()
+                .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+                .writeTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+                .build()
+            val meta = JSONObject().put("name", nome).put("parents", JSONArray().put(idPai)).toString()
+            val abrirSessao = Request.Builder()
+                .url("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable")
+                .header("Authorization", "Bearer $token")
+                .header("X-Upload-Content-Type", mime)
+                .apply { if (tamanho > 0) header("X-Upload-Content-Length", tamanho.toString()) }
+                .post(meta.toRequestBody("application/json; charset=UTF-8".toMediaType()))
+                .build()
+            val sessao = cliente.newCall(abrirSessao).execute().use { r ->
+                if (r.code == 401) throw UnauthorizedException()
+                if (!r.isSuccessful) throw IOException(mensagemDeErro(r.code, r.body?.string().orEmpty()))
+                r.header("Location") ?: throw IOException("O Drive não abriu a sessão de envio")
+            }
+            val corpo = object : okhttp3.RequestBody() {
+                override fun contentType() = mime.toMediaType()
+                override fun contentLength() = if (tamanho > 0) tamanho else -1L
+                override fun writeTo(sink: okio.BufferedSink) {
+                    abrir().use { entrada ->
+                        val buffer = ByteArray(64 * 1024)
+                        var enviados = 0L
+                        while (true) {
+                            val n = entrada.read(buffer)
+                            if (n < 0) break
+                            sink.write(buffer, 0, n)
+                            enviados += n
+                            if (tamanho > 0) aoProgresso((enviados.toFloat() / tamanho).coerceIn(0f, 1f))
+                        }
+                    }
+                }
+            }
+            cliente.newCall(Request.Builder().url(sessao).put(corpo).build()).execute().use { r ->
+                if (r.code == 401) throw UnauthorizedException()
+                if (!r.isSuccessful) throw IOException(mensagemDeErro(r.code, r.body?.string().orEmpty()))
+            }
+        }
+    }
 
     /** Move um arquivo ou pasta para a lixeira do Drive. */
     suspend fun trash(email: String, id: String) {
@@ -175,22 +290,11 @@ class DriveRepository(private val auth: AuthManager) {
     /** Metadados atuais de um arquivo; null se não existir mais ou se estiver na lixeira. */
     suspend fun arquivo(email: String, id: String): DriveFile? = comToken(email) { token ->
         val url = (api + "files/" + id).toHttpUrl().newBuilder()
-            .addQueryParameter("fields", "id,name,mimeType,size,modifiedTime,thumbnailLink,trashed")
+            .addQueryParameter("fields", "id,name,mimeType,size,modifiedTime,thumbnailLink,trashed,permissionIds")
             .build()
         try {
             val o = JSONObject(get(token, url))
-            if (o.optBoolean("trashed")) {
-                null
-            } else {
-                DriveFile(
-                    id = o.getString("id"),
-                    name = o.optString("name"),
-                    mimeType = o.optString("mimeType"),
-                    size = o.optString("size").toLongOrNull(),
-                    modifiedTime = o.optString("modifiedTime").ifEmpty { null },
-                    thumbnailLink = o.optString("thumbnailLink").ifEmpty { null },
-                )
-            }
+            if (o.optBoolean("trashed")) null else o.paraArquivo()
         } catch (e: DriveHttpException) {
             if (e.code == 404) null else throw e
         }
