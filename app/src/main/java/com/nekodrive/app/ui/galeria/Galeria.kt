@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.content.ContextCompat
 import com.nekodrive.app.ReprodutorSegundoPlano
 import com.nekodrive.app.ui.drive.CoresMidia
+import com.nekodrive.app.ui.drive.coresDaImagem
 import kotlinx.coroutines.Job
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -245,6 +246,7 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
     luz.pager = pager
     luz.fotos = dados.fotos
     luz.espaco = with(LocalDensity.current) { 16.dp.toPx() }
+    luz.raioDp = 520f // distância grande o bastante para um vídeo 16:9 centralizado ainda acender a barra
     var emPip by remember { mutableStateOf(false) }
     var paisagem by remember { mutableStateOf(false) }
     var menu by remember { mutableIntStateOf(0) } // 0 fechado, 1 principal, 2 velocidade, 3 legendas, 4 resolução
@@ -339,6 +341,26 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
 
     LaunchedEffect(pager) { snapshotFlow { pager.currentPage }.collect { vm.indiceFoto(it) } }
     LaunchedEffect(atual.id) { controles = true; zoomado = false; menu = 0 }
+
+    // Reflexos reativos ao vídeo: enquanto toca, 4 vezes por segundo uma amostra minúscula do quadro atual
+    // atualiza as cores que iluminam o vidro (pausado, uma amostra basta)
+    luz.videoTocando = ctrl?.tocando == true
+    LaunchedEffect(ctrl, ctrl?.pronto, ctrl?.tocando, atual.id) {
+        val c = ctrl ?: return@LaunchedEffect
+        while (c.pronto) {
+            val tv = c.textura
+            if (tv != null && tv.isAvailable) {
+                val quadro = runCatching { tv.getBitmap(24, 14) }.getOrNull()
+                if (quadro != null) {
+                    val cores = coresDaImagem(quadro)
+                    if (cores.dominante != Color.Unspecified) luz.vivas[atual.id] = cores
+                    quadro.recycle()
+                }
+            }
+            if (!c.tocando) break
+            delay(250)
+        }
+    }
 
     // Os controles do vídeo somem sozinhos durante a reprodução
     LaunchedEffect(controles, ctrl?.tocando, ctrl?.pronto, menu, arrastandoSlider, vm.controlesMs) {
@@ -456,7 +478,11 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
     }
     val compartilhar: () -> Unit = { scope.launch { compartilharArquivo(ctx, vm, atual) } }
 
-    CompositionLocalProvider(LocalVidro provides vidroLocal) {
+    CompositionLocalProvider(
+        LocalVidro provides vidroLocal,
+        LocalLuz provides (if (vm.reflexoPilula) luz else null),
+        LocalLuzSoToolbars provides vm.reflexoSoToolbars,
+    ) {
         BoxWithConstraints(
             Modifier.fillMaxSize().onPlaced { c ->
                 val p = c.positionInRoot()
@@ -571,7 +597,7 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                     }
                 }
                 Dissolver(mostrarFoto, Modifier.align(Alignment.BottomCenter)) {
-                    PilulaVidro(Modifier.navigationBarsPadding().padding(bottom = 16.dp), luz = if (vm.reflexoPilula) luz else null) {
+                    PilulaVidro(Modifier.navigationBarsPadding().padding(bottom = 16.dp), toolbar = true) {
                         // GIFs não têm botão de copiar
                         if (!ehGif) BotaoVidro(Icons.Rounded.ContentCopy, "Copiar imagem", copiar)
                         BotaoVidro(Icons.Rounded.Share, "Compartilhar", compartilhar)
@@ -601,6 +627,13 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                             aoClicar = { fechar() },
                             modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(12.dp),
                         ) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Voltar", tint = Color.White) }
+                        NomeUmaLinha(
+                            atual.name,
+                            Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(start = 72.dp, end = 72.dp, top = 24.dp),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = Color.White,
+                            centralizar = true,
+                        )
 
                         Column(
                             Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding()
@@ -640,7 +673,7 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                             }
 
                             Box(Modifier.fillMaxWidth()) {
-                                PilulaVidro(Modifier.align(Alignment.Center), luz = if (vm.reflexoPilula) luz else null) {
+                                PilulaVidro(Modifier.align(Alignment.Center), toolbar = true) {
                                     BotaoVidro(
                                         if (estadoAtual.favorito) Icons.Rounded.Star else Icons.Rounded.StarBorder,
                                         if (estadoAtual.favorito) "Remover dos favoritos" else "Favoritar",
@@ -818,10 +851,19 @@ private suspend fun AwaitPointerEventScope.tratarPinca(
     aoSoltar: () -> Unit,
 ) {
     awaitFirstDown(requireUnconsumed = false)
+    // com zoom, um dedo só vira arrasto depois de passar do limiar de toque: um toque leve (com a mão tremendo
+    // um pouco) continua sendo toque e mostra/esconde os controles
+    var movido = false
+    var percorrido = 0f
     do {
         val evento = awaitPointerEvent()
         val toques = evento.changes.count { it.pressed }
-        if (toques >= 2 || escala() > 1f) {
+        if (!movido && toques >= 2) movido = true
+        if (!movido && toques == 1 && escala() > 1f) {
+            percorrido += evento.calculatePan().getDistance()
+            if (percorrido > viewConfiguration.touchSlop) movido = true
+        }
+        if (movido) {
             val zoom = evento.calculateZoom()
             val pan = evento.calculatePan()
             val centroide = evento.calculateCentroid(useCurrent = true)
@@ -1155,7 +1197,7 @@ private fun PaginaVideo(
                         // deitado encosta no topo e na base. O tamanho é calculado na medição (layout) e não numa
                         // subcomposição (BoxWithConstraints), que durante a animação ficaria presa ao tamanho final.
                         AndroidView(
-                            factory = { c -> TextureView(c).also { tv -> ctrl.player.setVideoTextureView(tv) } },
+                            factory = { c -> TextureView(c).also { tv -> ctrl.player.setVideoTextureView(tv); ctrl.textura = tv } },
                             modifier = Modifier.fillMaxSize().layout { medido, restricoes ->
                                 val w = restricoes.maxWidth
                                 val h = restricoes.maxHeight
