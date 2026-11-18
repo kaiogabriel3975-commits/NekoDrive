@@ -191,7 +191,7 @@ internal fun Modifier.pastaBounds(
             exit = Animacoes.saida(saida, saida),
             boundsTransform = CurvaSuave,
             // Evita re-medidas durante o Lookahead quando a página contém LazyVerticalGrid.
-            resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds,
+            resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds(),
         )
     }
 
@@ -266,7 +266,7 @@ internal fun Modifier.midiaBounds(
             exit = Animacoes.saida(saida, saida),
             boundsTransform = CurvaMidia,
             // Mantém o layout interno estável durante a transição entre miniatura e player.
-            resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds,
+            resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds(),
             clipInOverlayDuringTransition = SemCorte,
         )
     }
