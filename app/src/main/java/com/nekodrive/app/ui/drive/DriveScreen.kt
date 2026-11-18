@@ -5,7 +5,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.foundation.layout.height
+import com.nekodrive.app.ui.galeria.LocalLuz
 import com.nekodrive.app.ui.galeria.LocalLuzPrincipal
+import com.nekodrive.app.ui.galeria.reflexoLuz
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.BoundsTransform
@@ -540,7 +542,12 @@ private fun Barra(
                 }
             }
             CirculoVidro(aoClicar = { vm.sairDaBusca() }) { Icon(Icons.Rounded.Close, "Fechar busca", tint = cor) }
-            Box(Modifier.weight(1f).clip(RoundedCornerShape(50)).vidro()) {
+            // a barra de busca conta como toolbar para os reflexos
+            val luzBusca = LocalLuz.current
+            Box(
+                Modifier.weight(1f).clip(RoundedCornerShape(50)).vidro()
+                    .then(if (luzBusca != null) Modifier.reflexoLuz(luzBusca) else Modifier),
+            ) {
                 TextField(
                     value = vm.termo,
                     onValueChange = { vm.definirTermo(it) },
