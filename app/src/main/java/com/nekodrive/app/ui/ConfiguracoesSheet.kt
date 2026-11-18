@@ -80,7 +80,8 @@ fun ConfiguracoesTela(vm: DriveViewModel, padding: PaddingValues, onContas: () -
 
     run {
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            // fonteVidro: o conteúdo que rola por baixo da toolbar e do cabeçalho é o que o blur desfoca
+            Modifier.fillMaxSize().fonteVidro().verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .padding(top = padding.calculateTopPadding() + 12.dp, bottom = padding.calculateBottomPadding() + 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
