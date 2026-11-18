@@ -215,9 +215,13 @@ class DriveRepository(private val auth: AuthManager) {
         }
     }
 
-    /** Fotos que estão diretamente dentro de uma pasta (para escolher a capa). */
+    /** Fotos e vídeos que estão diretamente dentro de uma pasta (para escolher a capa). */
     suspend fun imagensDaPasta(email: String, idPasta: String, pagina: String?): DrivePage =
-        list(email, "'$idPasta' in parents and trashed = false and mimeType contains 'image/'", "name_natural", pagina)
+        list(
+            email,
+            "'$idPasta' in parents and trashed = false and (mimeType contains 'image/' or mimeType contains 'video/')",
+            "name_natural", pagina,
+        )
 
     /** Todos os arquivos de uma pasta e das subpastas, com o caminho relativo de cada um. */
     suspend fun arquivosDaPasta(
