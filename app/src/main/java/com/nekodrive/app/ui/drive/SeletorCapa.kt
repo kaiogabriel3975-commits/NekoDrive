@@ -1,5 +1,11 @@
 package com.nekodrive.app.ui.drive
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material3.Icon
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,7 +55,7 @@ fun SeletorCapa(vm: DriveViewModel) {
                     CircularProgressIndicator()
                 }
                 lista.isEmpty() -> Text(
-                    "Esta pasta não tem fotos.",
+                    "Esta pasta não tem fotos nem vídeos.",
                     Modifier.padding(vertical = 24.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -65,11 +71,16 @@ fun SeletorCapa(vm: DriveViewModel) {
                             .apply { vm.token?.let { addHeader("Authorization", "Bearer $it") } }
                             .size(300, 300)
                             .build()
-                        AsyncImage(
-                            pedido, foto.name,
-                            Modifier.aspectRatio(1f).clip(RoundedCornerShape(10.dp)).clickable { vm.escolherCapa(foto) },
-                            contentScale = ContentScale.Crop,
-                        )
+                        Box(Modifier.aspectRatio(1f).clip(RoundedCornerShape(10.dp)).clickable { vm.escolherCapa(foto) }) {
+                            AsyncImage(pedido, foto.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                            if (foto.isVideo) {
+                                Icon(
+                                    Icons.Rounded.PlayArrow, "Vídeo", tint = Color.White,
+                                    modifier = Modifier.align(Alignment.BottomStart).padding(4.dp)
+                                        .background(Color.Black.copy(alpha = 0.55f), CircleShape).padding(3.dp).size(16.dp),
+                                )
+                            }
+                        }
                     }
                     if (vm.temMaisCapa) {
                         item(span = { GridItemSpan(maxLineSpan) }) {
