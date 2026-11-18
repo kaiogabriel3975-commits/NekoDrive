@@ -19,14 +19,20 @@ import androidx.compose.ui.text.input.TextFieldValue
 
 /** Pede o novo nome de um arquivo ou pasta. O nome já vem selecionado, sem a extensão. */
 @Composable
-fun DialogRenomear(nomeAtual: String, aoConfirmar: (String) -> Unit, aoCancelar: () -> Unit) {
+fun DialogRenomear(
+    nomeAtual: String,
+    aoConfirmar: (String) -> Unit,
+    aoCancelar: () -> Unit,
+    titulo: String = "Renomear",
+    rotuloConfirmar: String = "Renomear",
+) {
     val semExtensao = nomeAtual.substringBeforeLast('.', nomeAtual)
     var campo by remember { mutableStateOf(TextFieldValue(nomeAtual, TextRange(0, semExtensao.length))) }
     val foco = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { foco.requestFocus() } }
     AlertDialog(
         onDismissRequest = aoCancelar,
-        title = { Text("Renomear") },
+        title = { Text(titulo) },
         text = {
             OutlinedTextField(
                 value = campo,
@@ -36,7 +42,7 @@ fun DialogRenomear(nomeAtual: String, aoConfirmar: (String) -> Unit, aoCancelar:
             )
         },
         confirmButton = {
-            TextButton(onClick = { aoConfirmar(campo.text) }, enabled = campo.text.isNotBlank()) { Text("Renomear") }
+            TextButton(onClick = { aoConfirmar(campo.text) }, enabled = campo.text.isNotBlank()) { Text(rotuloConfirmar) }
         },
         dismissButton = { TextButton(onClick = aoCancelar) { Text("Cancelar") } },
     )
