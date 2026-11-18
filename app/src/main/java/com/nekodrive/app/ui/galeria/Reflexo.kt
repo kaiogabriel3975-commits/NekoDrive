@@ -3,7 +3,12 @@ package com.nekodrive.app.ui.galeria
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
@@ -14,40 +19,205 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nekodrive.app.data.drive.DriveFile
+import com.nekodrive.app.ui.Animacoes
+import com.nekodrive.app.ui.drive.CoresImagem
 import com.nekodrive.app.ui.drive.CoresMidia
 import com.nekodrive.app.ui.drive.ProporcoesMidia
+import kotlinx.coroutines.delay
+import kotlin.math.abs
+import kotlin.math.exp
+import kotlin.math.pow
+
+/** Luz do ambiente disponível para as peças de vidro desta tela (null: sem reflexos). */
+val LocalLuz = staticCompositionLocalOf<AmbienteLuz?> { null }
+
+/** Luz da tela principal: a lista de arquivos informa nela as miniaturas visíveis (veja [AmbienteLuz.fontes]). */
+val LocalLuzPrincipal = staticCompositionLocalOf<AmbienteLuz?> { null }
+
+/** Ligado: só as toolbars (pílulas marcadas como toolbar e a busca) recebem o reflexo. Desligado: tudo que é vidro. */
+val LocalLuzSoToolbars = staticCompositionLocalOf { false }
 
 /**
- * O que a galeria sabe sobre a luz do ambiente: onde está cada mídia visível (página do pager, formato e zoom)
- * e de que cor ela é. As pílulas de vidro usam isso para acender o contorno do lado de onde vem a luz.
- * Tudo aqui é leitura de números já prontos (cores e proporções das miniaturas), sem imagem nem alocação por quadro.
+ * O que a tela sabe sobre a luz do ambiente: onde estão as mídias que iluminam e de que cor elas são.
+ * Na galeria as fontes são as páginas visíveis do pager; na tela principal, as miniaturas visíveis da lista.
+ * Tudo vem de números já prontos (cores e proporções das miniaturas), sem ler imagem nenhuma.
  */
 @Stable
 class AmbienteLuz {
+    // galeria
     var pager: PagerState? = null
     var fotos: List<DriveFile> = emptyList()
+    var zoomado: () -> Boolean = { false }
+    var videoTocando = false
+    val vivas = HashMap<String, CoresImagem>() // cores do quadro atual do vídeo, enquanto toca
+
+    // tela principal (ou qualquer outra): quem usa informa as fontes e quando há movimento
+    var fontes: ((ColetorLuz) -> Unit)? = null
+    var movendo: () -> Boolean = { false }
+
     var largura = 0f
     var altura = 0f
     var espaco = 0f // espaço entre páginas do pager, em px
-    var origemX = 0f // canto da área da galeria na janela
+    var origemX = 0f // canto da área na janela
     var origemY = 0f
-    var zoomado: () -> Boolean = { false }
+    var raioDp = 520f // até onde a luz chega
+
+    internal fun emMovimento() = pager?.isScrollInProgress == true || videoTocando || movendo()
+
+    internal fun atualizarAlvo(col: ColetorLuz, raioPx: Float) {
+        col.zerar(raioPx)
+        if (largura > 0f && altura > 0f && col.w > 0f) {
+            val p = pager
+            if (p != null) coletarGaleria(p, col) else fontes?.invoke(col)
+        }
+        col.fechar()
+    }
+
+    private fun coletarGaleria(pg: PagerState, col: ColetorLuz) {
+        val l = largura
+        val a = altura
+        val atual = pg.currentPage
+        val fracao = pg.currentPageOffsetFraction
+        val outra = if (fracao > 0f) atual + 1 else if (fracao < 0f) atual - 1 else atual
+        val passo = l + espaco
+        val zoom = zoomado()
+        val telaRazao = l / a
+        for (k in 0..1) {
+            val i = if (k == 0) atual else outra
+            if (k == 1 && i == atual) break
+            val f = fotos.getOrNull(i) ?: continue
+            // retângulo da mídia na tela: página deslocada pelo deslize + formato da miniatura (ou página inteira)
+            val xPag = (i - atual - fracao) * passo
+            var ml: Float
+            var mr: Float
+            var mt: Float
+            var mb: Float
+            if (zoom && i == atual) {
+                ml = xPag - l; mr = xPag + 2 * l; mt = -a; mb = 2 * a
+            } else {
+                val r = ProporcoesMidia.obter(f.id) ?: telaRazao
+                val mw = if (r > telaRazao) l else a * r
+                val mh = if (r > telaRazao) l / r else a
+                ml = xPag + (l - mw) / 2f; mr = ml + mw
+                mt = (a - mh) / 2f; mb = mt + mh
+                // mídia encostada na borda da tela: a luz continua para fora dela
+                if (ml <= 0.5f) ml = -1e6f
+                if (mr >= l - 0.5f) mr = 1e6f
+                if (mt <= 0.5f) mt = -1e6f
+                if (mb >= a - 0.5f) mb = 1e6f
+            }
+            val v = vivas[f.id]
+            val dom = v?.dominante?.takeIf { it != Color.Unspecified } ?: CoresMidia.obter(f.id) ?: Color.White
+            val forte = v?.forte?.takeIf { it != Color.Unspecified } ?: CoresMidia.obterForte(f.id) ?: dom
+            col.fonte(ml, mt, mr, mb, dom, forte)
+        }
+    }
 }
 
-/** Resultado por pílula: força e cores da luz que chega de cada lado (0 cima, 1 direita, 2 baixo, 3 esquerda). */
-private class LuzPilula {
-    var x = 0f; var y = 0f; var w = 0f; var h = 0f
-    val forca = FloatArray(4)
-    val nucleo = FloatArray(12) // rgb da cor mais forte, por lado
-    val corpo = FloatArray(12) // rgb da cor mais presente, por lado
-    val soma = FloatArray(4)
+/**
+ * Luz que chega a uma peça de vidro, por lado (0 cima, 1 direita, 2 baixo, 3 esquerda): cada fonte entra por
+ * [fonte], a conta fecha em [fechar] e [suavizar] aproxima o que é desenhado do resultado, aos poucos.
+ */
+class ColetorLuz {
+    internal var x = 0f
+    internal var y = 0f
+    internal var w = 0f
+    internal var h = 0f
+    private var raio = 1f
+
+    private val soma = FloatArray(4)
+    private val aForca = FloatArray(4)
+    private val aN = FloatArray(12) // alvo: cor mais forte, rgb por lado
+    private val aC = FloatArray(12) // alvo: cor mais presente, rgb por lado
+    private val bruta = FloatArray(4)
+    private val rN = FloatArray(12)
+    private val rC = FloatArray(12)
+
+    // o que é desenhado
+    internal val forca = FloatArray(4)
+    internal val nucleo = FloatArray(12)
+    internal val corpo = FloatArray(12)
+
+    internal fun zerar(raioPx: Float) {
+        raio = raioPx
+        soma.fill(0f); aN.fill(0f); aC.fill(0f)
+    }
+
+    /** Uma mídia que ilumina, com seu retângulo (na mesma área da peça) e suas cores. */
+    fun fonte(ml: Float, mt: Float, mr: Float, mb: Float, dom: Color, forte: Color) {
+        val pl = x
+        val pr = x + w
+        val pt = y
+        val pb = y + h
+        val horiz = sobreposicao(pl, pr, ml, mr) // quanto da largura da peça a mídia cobre
+        val vert = sobreposicao(pt, pb, mt, mb)
+        val wCima = realce(cobertura(pt - mb, pt - mt, raio)) * horiz
+        val wBaixo = realce(cobertura(mt - pb, mb - pb, raio)) * horiz
+        val wEsq = realce(cobertura(pl - mr, pl - ml, raio)) * vert
+        val wDir = realce(cobertura(ml - pr, mr - pr, raio)) * vert
+        for (s in 0..3) {
+            val p = when (s) { 0 -> wCima; 1 -> wDir; 2 -> wBaixo; else -> wEsq }
+            if (p <= 0f) continue
+            soma[s] += p
+            val i = s * 3
+            aN[i] += p * forte.red; aN[i + 1] += p * forte.green; aN[i + 2] += p * forte.blue
+            aC[i] += p * dom.red; aC[i + 1] += p * dom.green; aC[i + 2] += p * dom.blue
+        }
+    }
+
+    internal fun fechar() {
+        for (s in 0..3) {
+            val t = soma[s]
+            if (t > 0f) {
+                for (c in 0..2) { aN[s * 3 + c] /= t; aC[s * 3 + c] /= t }
+                aForca[s] = if (t > 1f) 1f else t
+            } else {
+                aForca[s] = 0f
+            }
+        }
+        // refração: o vidro devolve parte da luz no lado oposto (por baixo, um pouco mais)
+        System.arraycopy(aForca, 0, bruta, 0, 4)
+        System.arraycopy(aN, 0, rN, 0, 12)
+        System.arraycopy(aC, 0, rC, 0, 12)
+        for (s in 0..3) {
+            val o = (s + 2) % 4
+            val r = (if (s == 0) 0.32f else 0.2f) * bruta[s]
+            if (r > aForca[o]) {
+                aForca[o] = r
+                for (c in 0..2) { aN[o * 3 + c] = rN[s * 3 + c]; aC[o * 3 + c] = rC[s * 3 + c] }
+            }
+        }
+    }
+
+    /** Aproxima o desenhado do alvo; devolve true enquanto ainda há o que mudar. */
+    internal fun suavizar(dt: Float, instantaneo: Boolean): Boolean {
+        val k = if (instantaneo) 1f else 1f - exp(-dt / 0.10f)
+        var mexe = false
+        for (s in 0..3) {
+            val alvo = aForca[s]
+            if (alvo > 0.02f) {
+                if (forca[s] < 0.03f) { // lado que está acendendo: já nasce na cor certa
+                    for (c in 0..2) { nucleo[s * 3 + c] = aN[s * 3 + c]; corpo[s * 3 + c] = aC[s * 3 + c] }
+                } else {
+                    for (c in 0..2) {
+                        val i = s * 3 + c
+                        if (abs(aN[i] - nucleo[i]) > 0.002f) { nucleo[i] += (aN[i] - nucleo[i]) * k; mexe = true } else nucleo[i] = aN[i]
+                        if (abs(aC[i] - corpo[i]) > 0.002f) { corpo[i] += (aC[i] - corpo[i]) * k; mexe = true } else corpo[i] = aC[i]
+                    }
+                }
+            }
+            val d = alvo - forca[s]
+            if (abs(d) > 0.002f) { forca[s] += d * k; mexe = true } else forca[s] = alvo
+        }
+        return mexe
+    }
 }
 
-private const val INF = 1e6f
-
-/** Quanto do trecho de 0 a [raio], contado a partir da pílula, a mídia cobre: o brilho cai ao cubo com a distância. */
+/** Quanto do trecho de 0 a [raio], contado a partir da peça, a mídia cobre: o brilho cai ao cubo com a distância. */
 private fun cobertura(de: Float, ate: Float, raio: Float): Float {
     val a = de.coerceAtLeast(0f)
     val b = ate.coerceAtMost(raio)
@@ -57,93 +227,56 @@ private fun cobertura(de: Float, ate: Float, raio: Float): Float {
     return ia * ia * ia - ib * ib * ib
 }
 
+/** Curva que levanta a luz fraca (mídia longe ainda ilumina um pouco) sem mexer na máxima. */
+private fun realce(c: Float): Float = if (c <= 0f) 0f else c.pow(0.6f)
+
 private fun sobreposicao(a0: Float, a1: Float, b0: Float, b1: Float): Float {
     val s = minOf(a1, b1) - maxOf(a0, b0)
-    return if (s <= 0f) 0f else s / (a1 - a0)
-}
-
-private fun LuzPilula.calcular(amb: AmbienteLuz, raio: Float) {
-    forca.fill(0f); soma.fill(0f); nucleo.fill(0f); corpo.fill(0f)
-    val pg = amb.pager ?: return
-    if (amb.largura <= 0f || amb.altura <= 0f || w <= 0f) return
-    val l = amb.largura
-    val a = amb.altura
-    val atual = pg.currentPage
-    val fracao = pg.currentPageOffsetFraction
-    val outra = if (fracao > 0f) atual + 1 else if (fracao < 0f) atual - 1 else atual
-    val passo = l + amb.espaco
-    val zoom = amb.zoomado()
-    val telaRazao = l / a
-
-    for (k in 0..1) {
-        val i = if (k == 0) atual else outra
-        if (k == 1 && i == atual) break
-        val f = amb.fotos.getOrNull(i) ?: continue
-
-        // retângulo da mídia na tela: página deslocada pelo deslize + formato da miniatura (ou página inteira)
-        val xPag = (i - atual - fracao) * passo
-        var ml: Float; var mr: Float; var mt: Float; var mb: Float
-        if (zoom && i == atual) {
-            ml = xPag - l; mr = xPag + 2 * l; mt = -a; mb = 2 * a
-        } else {
-            val r = ProporcoesMidia.obter(f.id) ?: telaRazao
-            val mw = if (r > telaRazao) l else a * r
-            val mh = if (r > telaRazao) l / r else a
-            ml = xPag + (l - mw) / 2f; mr = ml + mw
-            mt = (a - mh) / 2f; mb = mt + mh
-            // mídia encostada na borda da tela: a luz continua para fora dela
-            if (ml <= 0.5f) ml = -INF
-            if (mr >= l - 0.5f) mr = INF
-            if (mt <= 0.5f) mt = -INF
-            if (mb >= a - 0.5f) mb = INF
-        }
-
-        val pl = x; val pr = x + w; val pt = y; val pb = y + h
-        val horiz = sobreposicao(pl, pr, ml, mr) // quanto da largura da pílula a mídia cobre
-        val vert = sobreposicao(pt, pb, mt, mb)
-        val wCima = cobertura(pt - mb, pt - mt, raio) * horiz
-        val wBaixo = cobertura(mt - pb, mb - pb, raio) * horiz
-        val wEsq = cobertura(pl - mr, pl - ml, raio) * vert
-        val wDir = cobertura(ml - pr, mr - pr, raio) * vert
-
-        val dom = CoresMidia.obter(f.id) ?: Color.White
-        val forte = CoresMidia.obterForte(f.id) ?: dom
-        for (s in 0..3) {
-            val p = when (s) { 0 -> wCima; 1 -> wDir; 2 -> wBaixo; else -> wEsq }
-            if (p <= 0f) continue
-            soma[s] += p
-            nucleo[s * 3] += p * forte.red; nucleo[s * 3 + 1] += p * forte.green; nucleo[s * 3 + 2] += p * forte.blue
-            corpo[s * 3] += p * dom.red; corpo[s * 3 + 1] += p * dom.green; corpo[s * 3 + 2] += p * dom.blue
-        }
-    }
-    for (s in 0..3) {
-        val t = soma[s]
-        if (t > 0f) {
-            for (c in 0..2) { nucleo[s * 3 + c] /= t; corpo[s * 3 + c] /= t }
-            forca[s] = if (t > 1f) 1f else t
-        }
-    }
-    // o vidro deixa vazar um pouco de luz por baixo quando a mídia não o ilumina de baixo
-    var fonte = 0
-    if (forca[1] > forca[fonte]) fonte = 1
-    if (forca[3] > forca[fonte]) fonte = 3
-    val vaza = 0.3f * forca[fonte]
-    if (vaza > forca[2]) {
-        forca[2] = vaza
-        for (c in 0..2) { nucleo[6 + c] = nucleo[fonte * 3 + c]; corpo[6 + c] = corpo[fonte * 3 + c] }
-    }
+    return if (s <= 0f) 0f else (s / (a1 - a0)).coerceAtMost(1f)
 }
 
 private fun clarear(v: Float, quanto: Float) = v + (1f - v) * quanto
 
+private fun pincel(s: Int, w: Float, h: Float, a: Color, b: Color, fim: Color): Brush {
+    val fundo = minOf(w * 0.6f, h * 1.6f) // profundidade nas laterais: só a ponta da pílula
+    return when (s) {
+        0 -> Brush.verticalGradient(0f to a, 0.5f to b, 1f to fim, startY = 0f, endY = h * 0.9f)
+        2 -> Brush.verticalGradient(0f to fim, 0.5f to b, 1f to a, startY = h * 0.1f, endY = h)
+        3 -> Brush.horizontalGradient(0f to a, 0.5f to b, 1f to fim, startX = 0f, endX = fundo)
+        else -> Brush.horizontalGradient(0f to fim, 0.5f to b, 1f to a, startX = w - fundo, endX = w)
+    }
+}
+
 /**
- * Contorno de vidro iluminado pela mídia: cada lado da pílula acende com a cor da mídia que está desse lado,
- * com força que cai com a distância. Ao deslizar entre mídias, a luz da que sai apaga de um lado e a da que
- * chega acende do outro. Cuida só de desenho: o cálculo roda na fase de desenho e não recompõe nada.
+ * Vidro iluminado pela mídia, no estilo dos reflexos de vidro da Apple: aro fino de vidro sempre presente,
+ * brilho de topo, e em cada lado que recebe luz um aro claro (com a cor mais forte do ambiente) que se dissolve
+ * para dentro na cor mais presente, um halo suave, uma linha especular logo abaixo da borda e luz refratada no
+ * lado oposto. A força vem da distância até a mídia e muda aos poucos (ao deslizar entre mídias, ao rolar a
+ * lista e a cada amostra do vídeo tocando). [canto] é o raio dos cantos (null = pílula/círculo).
  */
 @Composable
-fun Modifier.reflexoLuz(amb: AmbienteLuz): Modifier {
-    val luz = remember { LuzPilula() }
+fun Modifier.reflexoLuz(amb: AmbienteLuz, canto: Dp? = null): Modifier {
+    val luz = remember { ColetorLuz() }
+    var tique by remember { mutableIntStateOf(0) }
+    val densidade = LocalDensity.current.density
+    LaunchedEffect(luz, amb) {
+        var dt = 0.016f
+        var antes = 0L
+        while (true) {
+            amb.atualizarAlvo(luz, amb.raioDp * densidade)
+            val mexeu = luz.suavizar(dt, Animacoes.sem)
+            if (mexeu) tique++
+            if (mexeu || amb.emMovimento()) {
+                val t = androidx.compose.runtime.withFrameNanos { it }
+                dt = if (antes == 0L) 0.016f else ((t - antes) / 1e9f).coerceIn(0.001f, 0.1f)
+                antes = t
+            } else {
+                delay(100)
+                antes = 0L
+                dt = 0.1f
+            }
+        }
+    }
     return this
         .onPlaced { c ->
             val p = c.positionInRoot()
@@ -151,29 +284,51 @@ fun Modifier.reflexoLuz(amb: AmbienteLuz): Modifier {
             luz.w = c.size.width.toFloat(); luz.h = c.size.height.toFloat()
         }
         .drawBehind {
-            luz.calcular(amb, 220.dp.toPx())
-            val w = size.width; val h = size.height
-            val traco = 1.5.dp.toPx()
-            val canto = CornerRadius(h / 2f)
+            if (tique < 0) return@drawBehind // só para esta camada reler o desenho a cada passo
+            val w = size.width
+            val h = size.height
+            val raio = canto?.toPx() ?: (minOf(w, h) / 2f)
+            val fio = 1.dp.toPx()
+            fun forma(inset: Float) = CornerRadius((raio - inset).coerceAtLeast(0f))
+            // aro de vidro e brilho de topo, mesmo sem luz nenhuma
+            drawRoundRect(
+                Color.White.copy(alpha = 0.10f),
+                topLeft = Offset(fio / 2f, fio / 2f), size = Size(w - fio, h - fio),
+                cornerRadius = forma(fio / 2f), style = Stroke(fio),
+            )
+            drawRoundRect(
+                Brush.verticalGradient(
+                    0f to Color.White.copy(alpha = 0.06f + 0.05f * luz.forca[0]),
+                    0.55f to Color.White.copy(alpha = 0f),
+                    startY = 0f, endY = h,
+                ),
+                cornerRadius = forma(0f),
+            )
             for (s in 0..3) {
-                val f = luz.forca[s]
+                val f = luz.forca[s].coerceAtMost(1f)
                 if (f < 0.02f) continue
-                val n = Color(clarear(luz.nucleo[s * 3], 0.45f), clarear(luz.nucleo[s * 3 + 1], 0.45f), clarear(luz.nucleo[s * 3 + 2], 0.45f), f * 0.95f)
-                val c = Color(clarear(luz.corpo[s * 3], 0.25f), clarear(luz.corpo[s * 3 + 1], 0.25f), clarear(luz.corpo[s * 3 + 2], 0.25f), f * 0.5f)
-                val fim = c.copy(alpha = 0f)
-                val pincel = when (s) {
-                    0 -> Brush.verticalGradient(0f to n, 0.5f to c, 1f to fim, startY = 0f, endY = h * 0.9f)
-                    2 -> Brush.verticalGradient(0f to fim, 0.5f to c, 1f to n, startY = h * 0.1f, endY = h)
-                    3 -> Brush.horizontalGradient(0f to n, 0.5f to c, 1f to fim, startX = 0f, endX = w * 0.3f)
-                    else -> Brush.horizontalGradient(0f to fim, 0.5f to c, 1f to n, startX = w * 0.7f, endX = w)
-                }
-                drawRoundRect(pincel, cornerRadius = canto, alpha = 0.12f) // brilho suave dentro do vidro
+                val i = s * 3
+                val n = Color(clarear(luz.nucleo[i], 0.55f), clarear(luz.nucleo[i + 1], 0.55f), clarear(luz.nucleo[i + 2], 0.55f), f * 0.95f)
+                val c = Color(clarear(luz.corpo[i], 0.3f), clarear(luz.corpo[i + 1], 0.3f), clarear(luz.corpo[i + 2], 0.3f), f * 0.55f)
+                val pinc = pincel(s, w, h, n, c, c.copy(alpha = 0f))
+                val halo = 3.5.dp.toPx()
+                val aro = 1.3.dp.toPx()
+                drawRoundRect(pinc, cornerRadius = forma(0f), alpha = 0.10f) // brilho suave dentro do vidro
                 drawRoundRect(
-                    pincel,
-                    topLeft = Offset(traco / 2f, traco / 2f),
-                    size = Size(w - traco, h - traco),
-                    cornerRadius = canto,
-                    style = Stroke(traco),
+                    pinc, topLeft = Offset(halo / 2f, halo / 2f), size = Size(w - halo, h - halo),
+                    cornerRadius = forma(halo / 2f), style = Stroke(halo), alpha = 0.28f,
+                )
+                drawRoundRect(
+                    pinc, topLeft = Offset(aro / 2f, aro / 2f), size = Size(w - aro, h - aro),
+                    cornerRadius = forma(aro / 2f), style = Stroke(aro),
+                )
+                // linha especular: reflexo branco bem fino logo abaixo da borda, dando espessura ao vidro
+                val esp = Color.White.copy(alpha = 0.5f * f)
+                val pesp = pincel(s, w, h, esp, esp.copy(alpha = 0.18f * f), esp.copy(alpha = 0f))
+                val ins = 2.2.dp.toPx()
+                drawRoundRect(
+                    pesp, topLeft = Offset(ins, ins), size = Size(w - 2 * ins, h - 2 * ins),
+                    cornerRadius = forma(ins), style = Stroke(0.8.dp.toPx()),
                 )
             }
         }
