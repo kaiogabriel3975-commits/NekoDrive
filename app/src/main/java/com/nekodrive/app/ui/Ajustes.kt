@@ -82,6 +82,9 @@ val LocalMiniaturasSoCache = staticCompositionLocalOf { false }
 /** Reflexos no contorno das pílulas da galeria. */
 val LocalReflexoPilula = staticCompositionLocalOf { true }
 
+/** Fundo dos cards de mídia: 0 cor da mídia, 1 neutro, 2 miniatura invertida, desfocada e escurecida. */
+val LocalFundoCard = staticCompositionLocalOf { 0 }
+
 /** Verdadeiro enquanto a rede ativa for Wi-Fi ou cabo (atualiza sozinho quando a rede muda). */
 @Composable
 fun rememberRedeWifi(): Boolean {
