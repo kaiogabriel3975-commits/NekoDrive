@@ -82,6 +82,9 @@ val LocalMiniaturasSoCache = staticCompositionLocalOf { false }
 /** Reflexos no contorno das pílulas da galeria. */
 val LocalReflexoPilula = staticCompositionLocalOf { true }
 
+/** Pede um novo link de miniatura quando a capa em vídeo de uma pasta não carrega (o link do Drive expira). */
+val LocalRenovarCapa = staticCompositionLocalOf<(String) -> Unit> { {} }
+
 /** Fundo dos cards de mídia: 0 cor da mídia, 1 neutro, 2 miniatura invertida, desfocada e escurecida. */
 val LocalFundoCard = staticCompositionLocalOf { 0 }
 
