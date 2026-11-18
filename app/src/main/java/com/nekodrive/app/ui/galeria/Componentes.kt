@@ -82,22 +82,33 @@ fun Dissolver(
     }
 }
 
-/** Botão dentro de um círculo de vidro com blur. */
+/** Luz da peça: segue o ajuste "só nas toolbars" (as peças marcadas como [toolbar] sempre recebem). */
 @Composable
-fun CirculoVidro(aoClicar: () -> Unit, modifier: Modifier = Modifier, conteudo: @Composable () -> Unit) {
+private fun luzDaPeca(toolbar: Boolean): AmbienteLuz? {
+    val luz = LocalLuz.current
+    return if (luz != null && (toolbar || !LocalLuzSoToolbars.current)) luz else null
+}
+
+/** Botão dentro de um círculo de vidro com blur. [toolbar]: conta como toolbar para o ajuste de reflexos. */
+@Composable
+fun CirculoVidro(aoClicar: () -> Unit, modifier: Modifier = Modifier, toolbar: Boolean = false, conteudo: @Composable () -> Unit) {
+    val luz = luzDaPeca(toolbar)
     Box(
-        modifier.size(46.dp).clip(CircleShape).vidro().clickable(onClick = aoClicar),
+        modifier.size(46.dp).clip(CircleShape).vidro()
+            .then(if (luz != null) Modifier.reflexoLuz(luz) else Modifier)
+            .clickable(onClick = aoClicar),
         contentAlignment = Alignment.Center,
     ) { conteudo() }
 }
 
 /**
- * Vários botões (ou um texto) agrupados numa única pílula de vidro com blur. Com [luz], o contorno é
- * iluminado pela mídia que está por perto (veja [reflexoLuz]).
+ * Vários botões (ou um texto) agrupados numa única pílula de vidro com blur. O contorno é iluminado pela mídia
+ * que está por perto (veja [reflexoLuz]). [toolbar]: conta como toolbar para o ajuste de reflexos.
  */
 @Composable
-fun PilulaVidro(modifier: Modifier = Modifier, luz: AmbienteLuz? = null, conteudo: @Composable RowScope.() -> Unit) {
+fun PilulaVidro(modifier: Modifier = Modifier, toolbar: Boolean = false, conteudo: @Composable RowScope.() -> Unit) {
     val forma = RoundedCornerShape(50)
+    val luz = luzDaPeca(toolbar)
     Row(
         modifier.clip(forma).vidro()
             .then(if (luz != null) Modifier.reflexoLuz(luz) else Modifier)
@@ -140,8 +151,10 @@ fun MenuVidro(
         val rolagem = rememberScrollState()
         val rebote = remember { Rebote(escopo, Float.MAX_VALUE) { } } // sem "puxar para atualizar": só o elástico
         LaunchedEffect(chave) { rolagem.scrollTo(0) }
+        val luz = luzDaPeca(false)
         Box(
             modifier.clip(RoundedCornerShape(22.dp)).vidro()
+                .then(if (luz != null) Modifier.reflexoLuz(luz, 22.dp) else Modifier)
                 .widthIn(min = 150.dp, max = 260.dp).width(IntrinsicSize.Max),
         ) {
             CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
