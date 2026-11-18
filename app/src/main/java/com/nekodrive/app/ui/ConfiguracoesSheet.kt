@@ -20,16 +20,23 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.nekodrive.app.ui.drive.DriveViewModel
 import com.nekodrive.app.ui.drive.formatarTamanho
 import kotlin.math.roundToInt
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import com.nekodrive.app.diagnostico.AppLogger
 
 @Composable
 private fun Secao(titulo: String) {
@@ -76,6 +83,9 @@ private fun <T> LinhaOpcoes(
 @Composable
 fun ConfiguracoesTela(vm: DriveViewModel, padding: PaddingValues, onContas: () -> Unit) {
     var limite by remember { mutableFloatStateOf(vm.limiteGb.toFloat()) }
+    var estadoExportacao by remember { mutableStateOf<String?>(null) }
+    val contexto = LocalContext.current
+    val escopo = rememberCoroutineScope()
     val usado = remember(vm.versaoCache) { vm.tamanhoCache() }
 
     run {
@@ -205,6 +215,31 @@ fun ConfiguracoesTela(vm: DriveViewModel, padding: PaddingValues, onContas: () -
                 steps = 48,
             )
             Button(onClick = { vm.limparCache() }) { Text("Limpar cache") }
+
+            Secao("Diagnóstico")
+            Text(
+                "Exporta os eventos registrados pelo NekoDrive e detalhes de falhas do aplicativo para a pasta Downloads.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Button(
+                onClick = {
+                    estadoExportacao = "Exportando logs…"
+                    escopo.launch {
+                        estadoExportacao = withContext(Dispatchers.IO) {
+                            runCatching { AppLogger.exportToDownloads(contexto) }
+                                .fold(
+                                    onSuccess = { "Logs salvos em Downloads/$it" },
+                                    onFailure = { "Falha ao exportar: ${it.localizedMessage ?: "erro desconhecido"}" },
+                                )
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Exportar logs de funcionamento") }
+            estadoExportacao?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }
