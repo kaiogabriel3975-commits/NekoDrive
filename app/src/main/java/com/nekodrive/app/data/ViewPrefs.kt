@@ -99,6 +99,16 @@ class ViewPrefs(context: Context) {
         get() = p.getBoolean("reflexoPilula", true)
         set(v) { p.edit().putBoolean("reflexoPilula", v).apply() }
 
+    /** Reflexos de luz só nas toolbars (pílula da galeria, player de vídeo, toolbar principal e busca). */
+    var reflexoSoToolbars: Boolean
+        get() = p.getBoolean("reflexoSoToolbars", false)
+        set(v) { p.edit().putBoolean("reflexoSoToolbars", v).apply() }
+
+    /** Fundo dos cards de mídia: 0 cor da mídia, 1 neutro (sem cores), 2 miniatura invertida, desfocada e escurecida. */
+    var fundoCard: Int
+        get() = p.getInt("fundoCard", 0)
+        set(v) { p.edit().putInt("fundoCard", v).apply() }
+
     /** Pastas sempre antes dos arquivos na ordenação. */
     var pastasPrimeiro: Boolean
         get() = p.getBoolean("pastasPrimeiro", true)
