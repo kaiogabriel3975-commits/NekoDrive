@@ -190,8 +190,7 @@ internal fun Modifier.pastaBounds(
             enter = EnterTransition.None,
             exit = Animacoes.saida(saida, saida),
             boundsTransform = CurvaSuave,
-            // Evita re-medidas durante o Lookahead quando a página contém LazyVerticalGrid.
-            resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds(),
+            resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
         )
     }
 
@@ -265,8 +264,7 @@ internal fun Modifier.midiaBounds(
             enter = Animacoes.entrada(entrada, entrada),
             exit = Animacoes.saida(saida, saida),
             boundsTransform = CurvaMidia,
-            // Mantém o layout interno estável durante a transição entre miniatura e player.
-            resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds(),
+            resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
             clipInOverlayDuringTransition = SemCorte,
         )
     }
@@ -640,6 +638,13 @@ private fun PaginaPasta(
         if (it == EnterExitState.Visible) 0f else 1f
     }
     val rebote = rememberRebote(carregando = vm.carregando && atual, aoAtualizar = { vm.atualizar() })
+    // O LazyVerticalGrid não deve animar a posição dos itens enquanto o AnimatedContent
+    // está executando uma transição compartilhada. A combinação de animateItem(placement)
+    // com sharedBounds(RemeasureToBounds) pode tentar posicionar o mesmo item em fases
+    // diferentes do Lookahead, causando "Placement happened before lookahead".
+    // A animação sharedBounds da pasta/mídia permanece intacta; só pausamos o rearranjo
+    // independente dos itens durante esses poucos instantes.
+    val transicaoDaPaginaAtiva = av.transition.isRunning
 
     Surface(
         Modifier.pastaBounds("pasta-$chave", st, av).fonteVidro().fillMaxSize(),
@@ -669,7 +674,7 @@ private fun PaginaPasta(
                                 Modifier.animateItem(
                                     fadeInSpec = null,
                                     fadeOutSpec = null,
-                                    placementSpec = if (Animacoes.normais) {
+                                    placementSpec = if (Animacoes.normais && !transicaoDaPaginaAtiva) {
                                         spring(
                                             dampingRatio = 0.9f,
                                             stiffness = 300f,
