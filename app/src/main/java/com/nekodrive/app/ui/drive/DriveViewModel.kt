@@ -2,6 +2,7 @@ package com.nekodrive.app.ui.drive
 
 import android.content.ContentValues
 import android.os.Environment
+import android.os.SystemClock
 import android.provider.MediaStore
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -16,6 +17,7 @@ import androidx.lifecycle.viewModelScope
 import com.nekodrive.app.data.AppContainer
 import com.nekodrive.app.data.Progresso
 import com.nekodrive.app.data.auth.GoogleAccount
+import com.nekodrive.app.data.auth.NeedsConsentException
 import com.nekodrive.app.data.drive.ArquivoDePasta
 import com.nekodrive.app.data.drive.DriveFile
 import com.nekodrive.app.data.drive.DrivePage
@@ -203,6 +205,14 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
 
     private var proxima: String? = null
     private var job: Job? = null
+
+    /** Conta quantas vezes a carga foi cancelada/refeita: um job antigo não mexe mais em [carregando]. */
+    private var geracaoCarga = 0
+
+    private fun cancelarCarga() {
+        job?.cancel()
+        geracaoCarga++
+    }
     /** Listagens já carregadas por pasta, para voltar instantaneamente. */
     private val cache = HashMap<String, Pair<List<DriveFile>, String?>>()
 
@@ -216,6 +226,19 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     fun mostrarErro(msg: String) { erro = msg }
+
+    /**
+     * Conta cuja autorização do Google expirou ou foi revogada. A tela observa isto e abre a confirmação de
+     * acesso do Google (a mesma do login), em vez de pedir para remover e adicionar a conta de novo.
+     */
+    var reautorizar by mutableStateOf<String?>(null); private set
+
+    fun consumirReautorizacao() { reautorizar = null }
+
+    private fun pedirReautorizacao(email: String) {
+        erro = "A autorização do Google expirou. Confirme o acesso na tela que vai abrir."
+        reautorizar = email
+    }
 
     /** Posição de rolagem por pasta: sobrevive à abertura do visualizador e ao voltar de uma pasta. */
     fun estadoGrade(chave: String): LazyGridState = estadosGrade.getOrPut(chave) { LazyGridState() }
@@ -245,9 +268,10 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     /** Atualiza a pasta atual mantendo a lista na tela até a nova chegar (puxar para atualizar). */
     fun atualizar() {
         val conta = contaAtual ?: return
-        job?.cancel()
+        cancelarCarga()
         selecionados = emptySet()
         erro = null
+        val minha = geracaoCarga
         job = viewModelScope.launch {
             carregando = true
             try {
@@ -261,16 +285,19 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
                 throw e
             } catch (e: UnknownHostException) {
                 erro = "Sem conexão com a internet."
+            } catch (e: NeedsConsentException) {
+                pedirReautorizacao(conta.email)
             } catch (e: Exception) {
                 erro = e.message ?: "Falha ao atualizar a pasta."
             } finally {
-                carregando = false
+                // só o job mais recente desliga o indicador (um job cancelado não apaga o do novo)
+                if (minha == geracaoCarga) carregando = false
             }
         }
     }
 
     private fun carregarPastaAtual(usarCache: Boolean) {
-        job?.cancel()
+        cancelarCarga()
         selecionados = emptySet()
         erro = null
         val conta = contaAtual
@@ -295,6 +322,7 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     private suspend fun carregarPagina(conta: GoogleAccount, pagina: String?) {
+        val minha = geracaoCarga
         carregando = true
         try {
             val p = c.drive.list(conta.email, consulta(), ordenacao(), pagina)
@@ -306,10 +334,12 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
             throw e
         } catch (e: UnknownHostException) {
             erro = "Sem conexão com a internet."
+        } catch (e: NeedsConsentException) {
+            pedirReautorizacao(conta.email)
         } catch (e: Exception) {
             erro = e.message ?: "Falha ao carregar a pasta."
         } finally {
-            carregando = false
+            if (minha == geracaoCarga) carregando = false
         }
     }
 
@@ -348,7 +378,7 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
 
     /** Abre uma pasta direto do Favoritos: o caminho passa a ser Meu Drive › pasta. */
     fun abrirPastaDireto(f: DriveFile) {
-        if (buscando) { job?.cancel(); buscando = false; termo = "" }
+        if (buscando) { cancelarCarga(); buscando = false; termo = "" }
         pilha = listOf(raiz, Pasta(f.id, f.name))
         reiniciarRolagem(f.id)
         carregarPastaAtual(usarCache = false)
@@ -387,7 +417,7 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     fun iniciarBusca() {
         if (buscando) return
         salvarCache()
-        job?.cancel()
+        cancelarCarga()
         reiniciarRolagem("busca")
         buscando = true; termo = ""
         pedirFocoBusca = true
@@ -397,7 +427,7 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
 
     fun definirTermo(t: String) {
         termo = t
-        job?.cancel()
+        cancelarCarga()
         selecionados = emptySet()
         val conta = contaAtual ?: return
         if (t.isBlank()) {
@@ -413,7 +443,7 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
 
     fun sairDaBusca() {
         if (!buscando) return
-        job?.cancel()
+        cancelarCarga()
         buscando = false; termo = ""
         carregarPastaAtual(usarCache = true)
     }
@@ -584,7 +614,12 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     suspend fun copiarParaCache(f: DriveFile, pasta: String = "copiar"): File {
         val conta = contaAtual ?: error("Nenhuma conta selecionada")
         val dir = File(c.cacheDir, pasta)
-        withContext(Dispatchers.IO) { dir.listFiles()?.forEach { it.delete() } }
+        // Só limpa o que já é antigo: apagar tudo quebrava um anexo ou compartilhamento ainda em uso
+        // por outro app (ex.: rascunho de e-mail) quando se compartilhava outro arquivo em seguida.
+        withContext(Dispatchers.IO) {
+            val limite = System.currentTimeMillis() - IDADE_LIMPEZA_COPIAS_MS
+            dir.listFiles()?.forEach { if (it.lastModified() < limite) it.delete() }
+        }
         val nome = f.id + "_" + f.name.replace(Regex("[^A-Za-z0-9._-]"), "_")
         val arquivo = File(dir, nome)
         c.drive.baixar(conta.email, f.id, arquivo)
@@ -611,6 +646,24 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
         )
     }
 
+    /**
+     * Os downloads avisam o progresso a cada bloco lido (dezenas de vezes por segundo), e cada gravação
+     * em [progressos] reavalia todos os itens da tela. Aqui só passa o que mudou pelo menos 1% e com
+     * 250 ms de intervalo; o primeiro valor e o 100% sempre passam, então a barra não fica "em degraus".
+     */
+    private fun progressoLimitado(id: String): (Float) -> Unit {
+        var ultimo = -1f
+        var instante = 0L
+        return { p ->
+            val agora = SystemClock.elapsedRealtime()
+            if (ultimo < 0f || (p >= 1f && ultimo < 1f) || (p - ultimo >= 0.01f && agora - instante >= 250L)) {
+                ultimo = p
+                instante = agora
+                progressos[id] = p
+            }
+        }
+    }
+
     fun baixar(f: DriveFile, subpasta: String? = null) {
         val conta = contaAtual ?: return
         if (f.isFolder || tarefas[f.id]?.isActive == true) return
@@ -621,7 +674,7 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
             try {
                 c.semaforo.withPermit {
                     if (midia) {
-                        c.midia.baixar(conta.email, f) { p -> progressos[f.id] = p }
+                        c.midia.baixar(conta.email, f, progressoLimitado(f.id))
                     } else {
                         salvarEmDownloads(conta.email, f, subpasta)
                     }
@@ -651,7 +704,8 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
             ?: throw IOException("Não foi possível criar o arquivo em Downloads")
         try {
             val saida = resolver.openOutputStream(uri) ?: throw IOException("Não foi possível gravar em Downloads")
-            saida.use { c.drive.baixarParaStream(email, f.id, it) { p -> progressos[f.id] = p } }
+            val aoProgresso = progressoLimitado(f.id)
+            saida.use { c.drive.baixarParaStream(email, f.id, it, aoProgresso) }
             val concluido = ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }
             resolver.update(uri, concluido, null, null)
         } catch (e: Exception) {
@@ -793,6 +847,8 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
                     if (falhas > 0) " ($falhas com erro)" else ""
                 limparSelecao()
                 versaoCache++
+                // A lista em cache da pasta de destino ficou velha (ex.: mover para a pasta de cima e voltar).
+                cache.remove(chave(idDestino))
                 recarregar()
             }
         }
@@ -1039,8 +1095,13 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
                     }
                 }
                 if (conta.email == contaAtual?.email) {
-                    gravarFavoritos(conta.email, lista)
-                    indisponiveis = sumidos
+                    // A lista pode ter mudado enquanto as chamadas de rede rodavam (favoritou ou
+                    // desfavoritou algo): parte da lista de agora e só troca os dados de quem ainda está nela.
+                    val atualizados = lista.associateBy { it.id }
+                    val agora = favoritosItens
+                    gravarFavoritos(conta.email, agora.map { atualizados[it.id] ?: it })
+                    val aindaFavoritos = agora.mapTo(HashSet()) { it.id }
+                    indisponiveis = sumidos.filterTo(HashSet()) { it in aindaFavoritos }
                     token = c.auth.token(conta.email)
                 }
             } catch (e: CancellationException) {
@@ -1191,3 +1252,6 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 }
+
+/** Cópias para compartilhar/abrir/copiar só são apagadas depois deste tempo. */
+private const val IDADE_LIMPEZA_COPIAS_MS = 10 * 60 * 1000L
