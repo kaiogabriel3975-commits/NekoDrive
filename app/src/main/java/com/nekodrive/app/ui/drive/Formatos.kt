@@ -17,10 +17,11 @@ fun formatarTamanho(bytes: Long?): String? {
     return if (i == 0) "$bytes B" else String.format(Locale.getDefault(), "%.1f %s", v, unidades[i])
 }
 
+private val FORMATO_DATA = DateTimeFormatter.ofPattern("dd/MM/yyyy")
+
 fun formatarData(iso: String?): String? = try {
     iso?.let {
-        OffsetDateTime.parse(it).atZoneSameInstant(ZoneId.systemDefault())
-            .format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+        OffsetDateTime.parse(it).atZoneSameInstant(ZoneId.systemDefault()).format(FORMATO_DATA)
     }
 } catch (e: Exception) {
     null
