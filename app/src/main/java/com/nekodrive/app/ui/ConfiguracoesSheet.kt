@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -84,9 +85,20 @@ private fun <T> LinhaOpcoes(
 fun ConfiguracoesTela(vm: DriveViewModel, padding: PaddingValues, onContas: () -> Unit) {
     var limite by remember { mutableFloatStateOf(vm.limiteGb.toFloat()) }
     var estadoExportacao by remember { mutableStateOf<String?>(null) }
+    var confirmarLimpeza by remember { mutableStateOf(false) }
     val contexto = LocalContext.current
     val escopo = rememberCoroutineScope()
     val usado = remember(vm.versaoCache) { vm.tamanhoCache() }
+
+    if (confirmarLimpeza) {
+        AlertDialog(
+            onDismissRequest = { confirmarLimpeza = false },
+            title = { Text("Limpar o cache?") },
+            text = { Text("Apaga as fotos e os vídeos guardados neste aparelho, inclusive os que você baixou para ver sem internet.") },
+            confirmButton = { TextButton(onClick = { confirmarLimpeza = false; vm.limparCache() }) { Text("Limpar") } },
+            dismissButton = { TextButton(onClick = { confirmarLimpeza = false }) { Text("Cancelar") } },
+        )
+    }
 
     run {
         Column(
@@ -214,7 +226,7 @@ fun ConfiguracoesTela(vm: DriveViewModel, padding: PaddingValues, onContas: () -
                 valueRange = 1f..50f,
                 steps = 48,
             )
-            Button(onClick = { vm.limparCache() }) { Text("Limpar cache") }
+            Button(onClick = { confirmarLimpeza = true }) { Text("Limpar cache") }
 
             Secao("Diagnóstico")
             Text(
