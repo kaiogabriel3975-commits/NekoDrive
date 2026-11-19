@@ -49,12 +49,15 @@ class ProvedorMidia : ContentProvider() {
 
         val (leitura, escrita) = ParcelFileDescriptor.createPipe()
         Thread {
+            // Sem `use`: ele fecharia o pipe antes do catch, e o app de destino leria um fim de
+            // arquivo normal (arquivo truncado). Fechar com erro precisa vir antes de fechar.
+            val saida = ParcelFileDescriptor.AutoCloseOutputStream(escrita)
             try {
-                ParcelFileDescriptor.AutoCloseOutputStream(escrita).use { saida ->
-                    runBlocking { c.drive.baixarParaStream(email, id, saida) { } }
-                }
+                runBlocking { c.drive.baixarParaStream(email, id, saida) { } }
+                saida.close()
             } catch (e: Exception) {
                 runCatching { escrita.closeWithError(e.message ?: "Falha ao baixar") }
+                runCatching { saida.close() }
             }
         }.start()
         return leitura
