@@ -184,6 +184,13 @@ fun NekoDriveApp() {
             }
         }
     }
+    // Autorização expirada/revogada: reabre a confirmação do Google para a mesma conta (uma vez por falha)
+    LaunchedEffect(vm.reautorizar) {
+        vm.reautorizar?.let { email ->
+            vm.consumirReautorizacao()
+            autorizar(email)
+        }
+    }
     // 3) seletor de contas do Android (permite escolher outra conta ou adicionar uma nova)
     val escolherConta = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
         val email = res.data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)
