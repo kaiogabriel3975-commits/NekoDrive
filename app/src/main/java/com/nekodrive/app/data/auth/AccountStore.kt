@@ -10,9 +10,9 @@ data class GoogleAccount(val email: String, val name: String?, val photoUrl: Str
 class AccountStore(context: Context) {
     private val prefs = context.getSharedPreferences("accounts", Context.MODE_PRIVATE)
 
-    fun load(): List<GoogleAccount> {
+    fun load(): List<GoogleAccount> = try {
         val arr = JSONArray(prefs.getString("list", "[]"))
-        return (0 until arr.length()).map { i ->
+        (0 until arr.length()).map { i ->
             val o = arr.getJSONObject(i)
             GoogleAccount(
                 email = o.getString("email"),
@@ -20,6 +20,9 @@ class AccountStore(context: Context) {
                 photoUrl = o.optString("photo").ifEmpty { null },
             )
         }
+    } catch (e: Exception) {
+        // Dado corrompido não deve derrubar o app na abertura.
+        emptyList()
     }
 
     fun save(list: List<GoogleAccount>) {
