@@ -255,6 +255,9 @@ private fun pincel(s: Int, w: Float, h: Float, a: Color, b: Color, fim: Color): 
     }
 }
 
+/** Posições do gradiente do aro especular: constantes, para não alocar a lista a cada quadro. */
+private val PARADAS_ESPECULAR = listOf(0f, 0.05f, 0.12f, 0.20f, 0.30f, 0.38f, 0.45f, 0.50f, 0.55f, 0.62f, 0.70f, 0.80f, 0.88f, 0.95f, 1f)
+
 /** Gradiente em varredura (ao redor do centro) girado em [graus]: a posição 0 do gradiente aponta para [graus]. */
 private fun varredura(centro: Offset, graus: Float, cores: List<Color>, paradas: List<Float>): Brush =
     object : ShaderBrush() {
@@ -370,7 +373,7 @@ fun Modifier.reflexoLuz(amb: AmbienteLuz, canto: Dp? = null): Modifier {
                     b(a1), b(a1 * 0.55f), b(a1 * 0.12f), b(0f), b(0f), b(a2 * 0.12f), b(a2 * 0.55f), b(a2),
                     b(a2 * 0.55f), b(a2 * 0.12f), b(0f), b(0f), b(a1 * 0.12f), b(a1 * 0.55f), b(a1),
                 ),
-                listOf(0f, 0.05f, 0.12f, 0.20f, 0.30f, 0.38f, 0.45f, 0.50f, 0.55f, 0.62f, 0.70f, 0.80f, 0.88f, 0.95f, 1f),
+                PARADAS_ESPECULAR,
             )
             val fio = 1.1.dp.toPx()
             val corpo = 2.2.dp.toPx()
