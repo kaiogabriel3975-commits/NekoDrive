@@ -43,11 +43,13 @@ val LocalVidroAtivo = staticCompositionLocalOf { true }
 
 private val FILTRO_SATURACAO = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(1.35f) })
 
+/** Uma única tinta, nunca alterada depois de criada: o saveLayer grava uma cópia dela no desenho. */
+private val TINTA_SATURACAO = Paint().apply { colorFilter = FILTRO_SATURACAO }
+
 /** Aumenta em 35% a saturação de tudo que é desenhado por dentro (usado em todos os blurs). */
 fun Modifier.saturar(): Modifier = this.drawWithContent {
-    val tinta = Paint().apply { colorFilter = FILTRO_SATURACAO }
     drawIntoCanvas { canvas ->
-        canvas.saveLayer(Rect(0f, 0f, size.width, size.height), tinta)
+        canvas.saveLayer(Rect(0f, 0f, size.width, size.height), TINTA_SATURACAO)
         drawContent()
         canvas.restore()
     }
