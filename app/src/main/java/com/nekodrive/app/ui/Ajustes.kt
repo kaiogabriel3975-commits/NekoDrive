@@ -88,17 +88,26 @@ val LocalRenovarCapa = staticCompositionLocalOf<(String) -> Unit> { {} }
 /** Fundo dos cards de mídia: 0 cor da mídia, 1 neutro, 2 miniatura invertida, desfocada e escurecida. */
 val LocalFundoCard = staticCompositionLocalOf { 0 }
 
-/** Verdadeiro enquanto a rede ativa for Wi-Fi ou cabo (atualiza sozinho quando a rede muda). */
+/** Wi-Fi ou cabo que não seja marcado como tarifado (hotspot de outro celular conta como dados móveis). */
+private fun redeSemTarifa(caps: NetworkCapabilities?): Boolean =
+    caps != null &&
+        (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) &&
+        caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+
+/** Verdadeiro enquanto a rede ativa for Wi-Fi ou cabo sem tarifa (atualiza sozinho quando a rede muda). */
 @Composable
 fun rememberRedeWifi(): Boolean {
     val ctx = LocalContext.current
-    var wifi by remember { mutableStateOf(true) }
+    // valor inicial lido da rede atual: antes ele assumia Wi-Fi até o primeiro aviso do sistema
+    var wifi by remember {
+        val gerente = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        mutableStateOf(runCatching { redeSemTarifa(gerente.getNetworkCapabilities(gerente.activeNetwork)) }.getOrDefault(true))
+    }
     DisposableEffect(ctx) {
         val gerente = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val ouvinte = object : ConnectivityManager.NetworkCallback() {
             override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
-                wifi = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
-                    caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+                wifi = redeSemTarifa(caps)
             }
 
             override fun onLost(network: Network) {
