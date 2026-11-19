@@ -686,11 +686,22 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                                         if (estadoAtual.noCache) "Salvo no cache" else "Baixar",
                                         { vm.baixar(atual) },
                                     )
-                                    if (activity != null) {
+                                    // aparelhos sem Picture-in-Picture (alguns Android Go) não mostram o botão
+                                    if (activity != null &&
+                                        activity.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)
+                                    ) {
                                         BotaoVidro(Icons.Rounded.PictureInPictureAlt, "Picture-in-Picture", {
-                                            activity.enterPictureInPictureMode(
-                                                PictureInPictureParams.Builder().setAspectRatio(razaoPip).build(),
-                                            )
+                                            val entrou = runCatching {
+                                                activity.enterPictureInPictureMode(
+                                                    PictureInPictureParams.Builder().setAspectRatio(razaoPip).build(),
+                                                )
+                                            }.getOrDefault(false)
+                                            // PiP desativado para o app nas configurações do Android: avisa em vez de não fazer nada
+                                            if (!entrou) {
+                                                android.widget.Toast.makeText(
+                                                    activity, "Picture-in-Picture indisponível", android.widget.Toast.LENGTH_SHORT,
+                                                ).show()
+                                            }
                                         })
                                     }
                                     BotaoVidro(Icons.Rounded.Delete, "Mover para a lixeira", { confirmarExclusao = true })
