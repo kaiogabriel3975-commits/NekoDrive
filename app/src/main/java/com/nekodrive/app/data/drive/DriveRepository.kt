@@ -154,6 +154,8 @@ class DriveRepository(private val auth: AuthManager) {
         abrir: () -> java.io.InputStream,
         aoProgresso: (Float) -> Unit,
     ) {
+        // a escrita do corpo é bloqueante e não enxerga o cancelamento sozinha: confere a cada bloco
+        val tarefa = currentCoroutineContext()[Job]
         comToken(email) { token ->
             val cliente = http.newBuilder()
                 .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
@@ -180,6 +182,7 @@ class DriveRepository(private val auth: AuthManager) {
                         val buffer = ByteArray(64 * 1024)
                         var enviados = 0L
                         while (true) {
+                            tarefa?.ensureActive()
                             val n = entrada.read(buffer)
                             if (n < 0) break
                             sink.write(buffer, 0, n)
