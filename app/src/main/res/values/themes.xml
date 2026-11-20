@@ -6,4 +6,6 @@
         <item name="android:enforceStatusBarContrast">false</item>
         <item name="android:windowLayoutInDisplayCutoutMode">always</item>
     </style>
+    <!-- Só para o seletor de dispositivos do Cast (precisa de um tema AppCompat). -->
+    <style name="Theme.NekoDrive.Cast" parent="Theme.AppCompat.DayNight.NoActionBar" />
 </resources>
