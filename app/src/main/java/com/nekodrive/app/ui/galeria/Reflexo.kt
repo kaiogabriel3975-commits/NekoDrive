@@ -27,6 +27,9 @@ import com.nekodrive.app.ui.Animacoes
 import com.nekodrive.app.ui.drive.CoresImagem
 import com.nekodrive.app.ui.drive.CoresMidia
 import com.nekodrive.app.ui.drive.ProporcoesMidia
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 import androidx.compose.ui.graphics.Shader
 import androidx.compose.ui.graphics.ShaderBrush
@@ -284,21 +287,26 @@ fun Modifier.reflexoLuz(amb: AmbienteLuz, canto: Dp? = null): Modifier {
     val luz = remember { ColetorLuz() }
     var tique by remember { mutableIntStateOf(0) }
     val densidade = LocalDensity.current.density
-    LaunchedEffect(luz, amb) {
-        var dt = 0.016f
-        var antes = 0L
-        while (true) {
-            amb.atualizarAlvo(luz, amb.raioDp * densidade)
-            val mexeu = luz.suavizar(dt, Animacoes.sem)
-            if (mexeu) tique++
-            if (mexeu || amb.emMovimento()) {
-                val t = androidx.compose.runtime.withFrameNanos { it }
-                dt = if (antes == 0L) 0.016f else ((t - antes) / 1e9f).coerceIn(0.001f, 0.1f)
-                antes = t
-            } else {
-                delay(100)
-                antes = 0L
-                dt = 0.1f
+    val cicloDeVida = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(luz, amb, cicloDeVida) {
+        // Só roda com o app visível (em segundo plano, o laço de 10 por segundo por peça não serve a ninguém).
+        // Ao voltar, recomeça do estado atual da luz.
+        cicloDeVida.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            var dt = 0.016f
+            var antes = 0L
+            while (true) {
+                amb.atualizarAlvo(luz, amb.raioDp * densidade)
+                val mexeu = luz.suavizar(dt, Animacoes.sem)
+                if (mexeu) tique++
+                if (mexeu || amb.emMovimento()) {
+                    val t = androidx.compose.runtime.withFrameNanos { it }
+                    dt = if (antes == 0L) 0.016f else ((t - antes) / 1e9f).coerceIn(0.001f, 0.1f)
+                    antes = t
+                } else {
+                    delay(100)
+                    antes = 0L
+                    dt = 0.1f
+                }
             }
         }
     }
