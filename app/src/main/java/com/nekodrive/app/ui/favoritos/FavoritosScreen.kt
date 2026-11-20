@@ -1,215 +1,44 @@
-package com.nekodrive.app.ui.favoritos
+package com.nekodrive.app.data
 
-import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.LocalOverscrollConfiguration
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ViewList
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.AddPhotoAlternate
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.rounded.GridView
-import androidx.compose.material.icons.rounded.Star
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
+import android.content.Context
 import com.nekodrive.app.data.drive.DriveFile
-import com.nekodrive.app.ui.FaixaVidro
-import com.nekodrive.app.ui.IndicadorAtualizar
-import com.nekodrive.app.ui.drive.DriveViewModel
-import com.nekodrive.app.ui.drive.ItemGrade
-import com.nekodrive.app.ui.drive.ItemLinha
-import com.nekodrive.app.ui.fonteVidro
-import com.nekodrive.app.ui.DialogRenomear
-import com.nekodrive.app.ui.drive.ladoMiniaturaLista
-import com.nekodrive.app.ui.drive.celulasGrade
-import com.nekodrive.app.ui.galeria.BotaoVidro
-import com.nekodrive.app.ui.galeria.CirculoVidro
-import com.nekodrive.app.ui.galeria.PilulaVidro
-import com.nekodrive.app.ui.rememberRebote
+import org.json.JSONArray
+import org.json.JSONObject
 
-private const val CHAVE = "favoritos"
+/** Favoritos locais por conta (não altera a estrela do Drive). Guarda os metadados da última vez que o arquivo foi visto. */
+class FavoritosStore(context: Context) {
+    private val p = context.getSharedPreferences("favoritos", Context.MODE_PRIVATE)
 
-@OptIn(ExperimentalSharedTransitionApi::class, ExperimentalFoundationApi::class)
-@Composable
-fun FavoritosScreen(
-    vm: DriveViewModel,
-    st: SharedTransitionScope,
-    av: AnimatedVisibilityScope,
-    contentPadding: PaddingValues,
-    aoAbrirPasta: (DriveFile) -> Unit,
-) {
-    var confirmar by remember { mutableStateOf(false) }
-    var renomear by remember { mutableStateOf<DriveFile?>(null) }
-    var alturaTopo by remember { mutableStateOf(0.dp) }
-    BackHandler(enabled = vm.selecionados.isNotEmpty()) { vm.limparSelecao() }
-    LaunchedEffect(vm.contaAtual?.email) { vm.carregarFavoritos() }
-    val rebote = rememberRebote(carregando = vm.carregandoFavoritos, aoAtualizar = { vm.carregarFavoritos(forcar = true) })
-
-    val lista = vm.favoritosItens.filter { it.id !in vm.indisponiveis }
-    val aoTocar: (DriveFile) -> Unit = { f ->
-        if (vm.selecionados.isNotEmpty()) vm.alternarSelecao(f)
-        else if (f.isFolder) aoAbrirPasta(f)
-        else if (f.isImage || f.isVideo) vm.abrirFoto(f, lista, CHAVE)
-    }
-    val topo = contentPadding.calculateTopPadding()
-    val base = contentPadding.calculateBottomPadding()
-    val cor = MaterialTheme.colorScheme.onSurface
-
-    Box(Modifier.fillMaxSize().nestedScroll(rebote)) {
-        Box(Modifier.fillMaxSize().graphicsLayer { translationY = rebote.deslocamento }.fonteVidro()) {
-            CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
-                if (vm.grade) {
-                    LazyVerticalGrid(
-                        columns = celulasGrade(vm.colunas, vm.tamanhoMiniatura),
-                        state = vm.estadoGrade(CHAVE),
-                        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = topo + alturaTopo + 12.dp, bottom = base + 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxSize(),
-                    ) {
-                        items(lista, key = { it.id }) { f ->
-                            ItemGrade(
-                                f, vm.token, f.id in vm.selecionados, vm.estadoDe(f), st, av, av,
-                                { aoTocar(f) }, { vm.alternarSelecao(f) },
-                                aoCancelarDownload = { vm.cancelarDownload(f) },
-                            )
-                        }
-                    }
-                } else {
-                    LazyColumn(
-                        Modifier.fillMaxSize(),
-                        state = vm.estadoLista(CHAVE),
-                        contentPadding = PaddingValues(top = topo + alturaTopo, bottom = base),
-                    ) {
-                        items(lista, key = { it.id }) { f ->
-                            ItemLinha(
-                                f, vm.token, f.id in vm.selecionados, vm.estadoDe(f), st, av, av,
-                                { aoTocar(f) }, { vm.alternarSelecao(f) },
-                                ladoMiniatura = ladoMiniaturaLista(vm.tamanhoMiniatura),
-                                aoCancelarDownload = { vm.cancelarDownload(f) },
-                            )
-                        }
-                    }
-                }
-            }
-            if (lista.isEmpty()) {
-                Text(
-                    "Nenhum favorito ainda.\nSegure um arquivo ou pasta e toque na estrela.",
-                    Modifier.align(Alignment.Center).padding(32.dp),
-                    textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+    fun ler(email: String): List<DriveFile> = try {
+        val arr = JSONArray(p.getString(email, "[]"))
+        (0 until arr.length()).map { i ->
+            val o = arr.getJSONObject(i)
+            DriveFile(
+                id = o.getString("id"),
+                name = o.optString("name"),
+                mimeType = o.optString("mimeType"),
+                size = o.optString("size").toLongOrNull(),
+                modifiedTime = o.optString("modifiedTime").ifEmpty { null },
+                thumbnailLink = o.optString("thumbnailLink").ifEmpty { null },
+            )
         }
-        IndicadorAtualizar(rebote, Modifier.align(Alignment.TopCenter).padding(top = topo + alturaTopo + 8.dp))
+    } catch (e: Exception) {
+        emptyList()
+    }
 
-        FaixaVidro(topo = topo, aoMedir = { alturaTopo = it }, modifier = Modifier.align(Alignment.TopCenter)) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (vm.selecionados.isNotEmpty()) {
-                    CirculoVidro(aoClicar = { vm.limparSelecao() }) { Icon(Icons.Rounded.Close, "Cancelar seleção", tint = cor) }
-                    PilulaVidro {
-                        Text(
-                            "${vm.selecionados.size}",
-                            Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = cor,
-                        )
-                    }
-                    Spacer(Modifier.weight(1f))
-                    val unico = if (vm.selecionados.size == 1) lista.firstOrNull { it.id in vm.selecionados } else null
-                    PilulaVidro {
-                        BotaoVidro(Icons.Rounded.Star, "Remover dos favoritos", { vm.favoritarSelecao(lista) }, cor)
-                        BotaoVidro(Icons.Rounded.Download, "Baixar", { vm.baixarSelecionados() }, cor)
-                        if (unico != null) BotaoVidro(Icons.Rounded.Edit, "Renomear", { renomear = unico }, cor)
-                        if (unico != null && unico.isFolder) BotaoVidro(Icons.Rounded.AddPhotoAlternate, "Definir capa", { vm.abrirSeletorCapa(unico) }, cor)
-                        BotaoVidro(Icons.Rounded.Delete, "Mover para a lixeira", { confirmar = true }, cor)
-                    }
-                } else {
-                    PilulaVidro {
-                        Text(
-                            "Favoritos",
-                            Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                            style = MaterialTheme.typography.titleSmall,
-                            color = cor,
-                        )
-                    }
-                    Spacer(Modifier.weight(1f))
-                    CirculoVidro(aoClicar = { vm.alternarModo() }) {
-                        Icon(
-                            if (vm.grade) Icons.AutoMirrored.Rounded.ViewList else Icons.Rounded.GridView,
-                            "Alternar entre grade e lista",
-                            tint = cor,
-                        )
-                    }
-                }
-            }
-            if (vm.indisponiveis.isNotEmpty()) {
-                PilulaVidro(Modifier.padding(horizontal = 12.dp)) {
-                    Text(
-                        "${vm.indisponiveis.size} favorito(s) não estão mais no Drive.",
-                        Modifier.padding(start = 10.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                    TextButton(onClick = { vm.removerIndisponiveis() }) { Text("Remover da lista") }
-                }
-            }
+    fun apagar(email: String) { p.edit().remove(email).apply() }
+
+    fun salvar(email: String, lista: List<DriveFile>) {
+        val arr = JSONArray()
+        lista.forEach {
+            arr.put(
+                JSONObject()
+                    .put("id", it.id).put("name", it.name).put("mimeType", it.mimeType)
+                    .put("size", it.size?.toString() ?: "")
+                    .put("modifiedTime", it.modifiedTime ?: "")
+                    .put("thumbnailLink", it.thumbnailLink ?: ""),
+            )
         }
-    }
-
-    renomear?.let { f ->
-        DialogRenomear(
-            nomeAtual = f.name,
-            aoConfirmar = { novo -> renomear = null; vm.renomear(f, novo) { vm.limparSelecao() } },
-            aoCancelar = { renomear = null },
-        )
-    }
-
-    if (confirmar) {
-        AlertDialog(
-            onDismissRequest = { confirmar = false },
-            title = { Text("Mover para a lixeira?") },
-            text = { Text("${vm.selecionados.size} item(ns) vão para a lixeira do Drive e saem dos favoritos.") },
-            confirmButton = { TextButton(onClick = { confirmar = false; vm.moverParaLixeira() }) { Text("Mover") } },
-            dismissButton = { TextButton(onClick = { confirmar = false }) { Text("Cancelar") } },
-        )
+        p.edit().putString(email, arr.toString()).apply()
     }
 }
