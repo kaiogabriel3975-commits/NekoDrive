@@ -28,6 +28,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.google.android.gms.cast.framework.CastState
 import com.nekodrive.app.data.drive.DriveFile
+import com.nekodrive.app.ui.redeSemTarifa
 import com.nekodrive.app.ui.drive.DriveViewModel
 import com.nekodrive.app.ui.player.CastControle
 import kotlinx.coroutines.CancellationException
@@ -84,6 +85,8 @@ class ControleVideo(
             true,
         )
         .setHandleAudioBecomingNoisy(true)
+        // com a tela apagada (áudio em segundo plano) mantém CPU e Wi-Fi acordados só enquanto toca
+        .setWakeMode(C.WAKE_MODE_NETWORK)
         .build()
     val cast = CastControle(ctx, vm.midia.servidor)
 
@@ -184,8 +187,7 @@ class ControleVideo(
     private val gerenteRede = ctx.getSystemService(ConnectivityManager::class.java)
     private val ouvinteRede = object : ConnectivityManager.NetworkCallback() {
         override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
-            val wifi = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
-                caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+            val wifi = redeSemTarifa(caps)
             escopo.launch {
                 if (wifi != redeWifi) {
                     redeWifi = wifi
@@ -196,9 +198,7 @@ class ControleVideo(
     }
 
     init {
-        redeWifi = gerenteRede?.getNetworkCapabilities(gerenteRede.activeNetwork)?.let {
-            it.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || it.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
-        } ?: true
+        redeWifi = gerenteRede?.getNetworkCapabilities(gerenteRede.activeNetwork)?.let { redeSemTarifa(it) } ?: true
         try {
             gerenteRede?.registerDefaultNetworkCallback(ouvinteRede)
         } catch (e: Exception) {
