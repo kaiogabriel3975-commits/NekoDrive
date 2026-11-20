@@ -226,7 +226,9 @@ fun ConfiguracoesTela(vm: DriveViewModel, padding: PaddingValues, onContas: () -
                 valueRange = 1f..50f,
                 steps = 48,
             )
-            Button(onClick = { confirmarLimpeza = true }) { Text("Limpar cache") }
+            Button(onClick = { confirmarLimpeza = true }, enabled = !vm.limpandoCache) {
+                Text(if (vm.limpandoCache) "Limpando…" else "Limpar cache")
+            }
 
             Secao("Diagnóstico")
             Text(
