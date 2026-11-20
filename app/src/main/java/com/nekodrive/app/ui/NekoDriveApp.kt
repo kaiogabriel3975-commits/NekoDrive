@@ -30,6 +30,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -39,7 +40,9 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -47,6 +50,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
@@ -437,16 +442,25 @@ private fun LateralPaisagem(
                 windowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
                 modifier = Modifier.weight(1f),
             ) {
-                Spacer(Modifier.weight(1f))
-                Destino.entries.forEach { d ->
-                    NavigationRailItem(
-                        selected = atual == d,
-                        onClick = { aoSelecionar(d) },
-                        icon = { Icon(if (atual == d) d.iconeSelecionado else d.icone, contentDescription = d.rotulo) },
-                        label = { Text(d.rotulo) },
-                    )
+                // Em paisagem a altura é pouca: os botões têm tamanho próprio (não encolhem) e a lista rola.
+                // Quando cabem, continuam centralizados como antes (a coluna ocupa no mínimo a altura visível).
+                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                    val alturaVisivel = maxHeight
+                    Column(
+                        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = alturaVisivel),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
+                    ) {
+                        Destino.entries.forEach { d ->
+                            NavigationRailItem(
+                                selected = atual == d,
+                                onClick = { aoSelecionar(d) },
+                                icon = { Icon(if (atual == d) d.iconeSelecionado else d.icone, contentDescription = d.rotulo) },
+                                label = { Text(d.rotulo) },
+                            )
+                        }
+                    }
                 }
-                Spacer(Modifier.weight(1f))
             }
         }
     }
