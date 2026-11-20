@@ -24,6 +24,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 
 /** Quando verdadeiro, os nomes ficam parados (durante as animações de abrir e fechar a galeria). */
@@ -54,15 +57,20 @@ fun NomeUmaLinha(
     LaunchedEffect(Unit) { opacidade.animateTo(1f, Animacoes.espec(tween(140), tween(100))) }
     val intervalo = with(densidade) { 32.dp.toPx() }
     val ciclo = larguraTexto + intervalo
+    val cicloDeVida = LocalLifecycleOwner.current.lifecycle
 
-    LaunchedEffect(excede, pausado, texto, ciclo, Animacoes.modo) {
+    LaunchedEffect(excede, pausado, texto, ciclo, Animacoes.modo, cicloDeVida) {
         if (Animacoes.sem) deslocamento = 0f // sem animações: nomes longos ficam parados
         if (excede && !pausado && !Animacoes.sem) {
             val passo = with(densidade) { 38.dp.toPx() } / QUADROS_POR_SEGUNDO
-            if (deslocamento == 0f) delay(1200)
-            while (true) {
-                delay(1000L / QUADROS_POR_SEGUNDO)
-                deslocamento = (deslocamento + passo) % ciclo
+            // Só anda com o app visível: em segundo plano o laço acordava a CPU 24 vezes por segundo por nome.
+            // Ao voltar, continua de onde parou (o deslocamento fica guardado).
+            cicloDeVida.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                if (deslocamento == 0f) delay(1200)
+                while (true) {
+                    delay(1000L / QUADROS_POR_SEGUNDO)
+                    deslocamento = (deslocamento + passo) % ciclo
+                }
             }
         }
     }
