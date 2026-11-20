@@ -123,7 +123,7 @@ class EvictorAjustavel(inicial: Long) : CacheEvictor {
  * e a limpeza automática respeita o limite de GB.
  */
 @OptIn(UnstableApi::class)
-class MidiaCache(context: Context, private val auth: AuthManager, limiteGb: Int) {
+class MidiaCache(private val context: Context, private val auth: AuthManager, limiteGb: Int) {
     private val conta = AtomicReference<String?>(null)
     private val evictor = EvictorAjustavel(limiteGb * GB)
     private val cache = SimpleCache(File(context.cacheDir, "midia"), evictor, StandaloneDatabaseProvider(context))
@@ -230,8 +230,50 @@ class MidiaCache(context: Context, private val auth: AuthManager, limiteGb: Int)
     /** Arquivo de uma foto já guardada por inteiro (para abrir offline), ou null. */
     fun arquivoLocal(email: String, f: DriveFile): File? {
         if (!completo(email, f)) return null
-        val span = cache.getCachedSpans(chave(email, f.id)).singleOrNull() ?: return null
-        return span.file?.takeIf { span.position == 0L && span.length >= (f.size ?: Long.MAX_VALUE) }
+        val tam = f.size ?: return null
+        val spans = cache.getCachedSpans(chave(email, f.id)).sortedBy { it.position }
+        val span = spans.singleOrNull()
+        if (span != null) return span.file?.takeIf { span.position == 0L && span.length >= tam }
+        // Um download cancelado e retomado deixa o arquivo em vários trechos no cache: junta num arquivo só
+        return juntarTrechos(f, spans, tam)
+    }
+
+    /**
+     * Junta os trechos (contíguos, começando em 0) num arquivo único em cache/juntar. Só para arquivos pequenos,
+     * como fotos, porque pode ser chamado a partir da tela; o resultado é reaproveitado nas próximas chamadas.
+     */
+    private fun juntarTrechos(f: DriveFile, spans: List<CacheSpan>, tam: Long): File? {
+        if (tam > LIMITE_JUNTAR_BYTES) return null
+        var esperado = 0L
+        for (s in spans) {
+            if (s.position != esperado || s.file == null) return null
+            esperado += s.length
+        }
+        if (esperado != tam) return null
+        val dir = File(context.cacheDir, "juntar").apply { mkdirs() }
+        val agora = System.currentTimeMillis()
+        dir.listFiles()?.forEach { if (it.lastModified() < agora - IDADE_JUNTAR_MS) it.delete() }
+        val destino = File(dir, "${f.id}_$tam")
+        if (destino.exists() && destino.length() == tam) {
+            destino.setLastModified(agora)
+            return destino
+        }
+        val temporario = File(dir, destino.name + ".tmp")
+        return try {
+            temporario.outputStream().use { saida ->
+                for (s in spans) s.file!!.inputStream().use { it.copyTo(saida) }
+            }
+            if (temporario.length() == tam && temporario.renameTo(destino)) destino else { temporario.delete(); null }
+        } catch (e: Exception) {
+            temporario.delete()
+            null
+        }
+    }
+
+    /** Apaga do cache tudo o que pertence a esta conta (as chaves começam com "e-mail|"). */
+    fun limparConta(email: String) {
+        val prefixo = "$email|"
+        cache.keys.toList().filter { it.startsWith(prefixo) }.forEach { cache.removeResource(it) }
     }
 
     /** Baixa o arquivo inteiro para o cache; baixar de novo continua de onde parou. */
@@ -263,3 +305,7 @@ class MidiaCache(context: Context, private val auth: AuthManager, limiteGb: Int)
         cache.keys.toList().forEach { cache.removeResource(it) }
     }
 }
+
+/** Arquivos em vários trechos só são juntados até este tamanho (ex.: fotos). */
+private const val LIMITE_JUNTAR_BYTES = 32L * 1024 * 1024
+private const val IDADE_JUNTAR_MS = 10 * 60 * 1000L
