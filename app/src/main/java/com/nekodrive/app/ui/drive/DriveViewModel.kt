@@ -1010,16 +1010,40 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
 
     fun tamanhoCache(): Long = c.midia.tamanhoTotal()
 
+    /** Verdadeiro enquanto o cache está sendo apagado ou ajustado em segundo plano. */
+    var limpandoCache by mutableStateOf(false); private set
+    private var operacoesCache = 0
+
     fun definirLimiteGb(gb: Int) {
         limiteGb = gb
         c.prefs.limiteGb = gb
-        c.midia.definirLimite(gb)
-        versaoCache++
+        trabalharNoCache { c.midia.definirLimite(gb) }
     }
 
     fun limparCache() {
-        c.midia.limpar()
-        versaoCache++
+        trabalharNoCache { c.midia.limpar() }
+    }
+
+    /**
+     * Apagar o cache (milhares de arquivos) ou baixar o limite remove arquivos um a um: fora da thread
+     * principal, senão a tela trava. O contador evita que uma operação desligue o aviso da outra.
+     */
+    private fun trabalharNoCache(bloco: () -> Unit) {
+        viewModelScope.launch {
+            operacoesCache++
+            limpandoCache = true
+            try {
+                withContext(Dispatchers.IO) { bloco() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                erro = "Não foi possível ajustar o cache: ${e.message}"
+            } finally {
+                operacoesCache--
+                limpandoCache = operacoesCache > 0
+                versaoCache++
+            }
+        }
     }
 
     // ---------- favoritos ----------
