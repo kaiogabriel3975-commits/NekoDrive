@@ -5,6 +5,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.Uri
+import androidx.compose.runtime.RememberObserver
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -74,7 +75,7 @@ class ControleVideo(
     val arquivo: DriveFile,
     private val legendasLaterais: List<DriveFile>,
     private val escopo: CoroutineScope,
-) {
+) : RememberObserver {
     val player: ExoPlayer = ExoPlayer.Builder(ctx)
         .setMediaSourceFactory(DefaultMediaSourceFactory(vm.midia.fabrica()))
         // foco de áudio (para o som ceder a ligações e outros apps) e pausa ao desconectar o fone
@@ -461,7 +462,19 @@ class ControleVideo(
         }
     }
 
+    // O player nasce na construção, que acontece dentro de um `remember`. Se o Compose descartar essa composição
+    // antes de aplicá-la (acontece em transições interrompidas), ninguém chamaria liberar(): o decodificador e o
+    // callback de rede ficariam presos. onAbandoned cobre exatamente esse caso. Nos demais, quem libera continua
+    // sendo o DisposableEffect da Galeria, como antes.
+    override fun onRemembered() {}
+    override fun onForgotten() {}
+    override fun onAbandoned() = liberar()
+
+    private var liberado = false
+
     fun liberar() {
+        if (liberado) return
+        liberado = true
         salvarAgora()
         try { gerenteRede?.unregisterNetworkCallback(ouvinteRede) } catch (e: Exception) { }
         player.removeListener(ouvinte)
