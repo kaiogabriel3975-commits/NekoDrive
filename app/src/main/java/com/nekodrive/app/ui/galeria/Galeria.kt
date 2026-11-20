@@ -345,8 +345,12 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
     // Reflexos reativos ao vídeo: enquanto toca, 4 vezes por segundo uma amostra minúscula do quadro atual
     // atualiza as cores que iluminam o vidro (pausado, uma amostra basta)
     luz.videoTocando = ctrl?.tocando == true
-    LaunchedEffect(ctrl, ctrl?.pronto, ctrl?.tocando, atual.id) {
+    // Só há vidro para iluminar quando os controles estão na tela: com eles ocultos (ou em PiP) a amostragem
+    // para. Ao voltarem, o efeito reinicia e a primeira amostra sai na hora, antes de a pílula aparecer.
+    val vidroVisivel = controles && !emPip
+    LaunchedEffect(ctrl, ctrl?.pronto, ctrl?.tocando, atual.id, vidroVisivel) {
         val c = ctrl ?: return@LaunchedEffect
+        if (!vidroVisivel) return@LaunchedEffect
         while (c.pronto) {
             val tv = c.textura
             if (tv != null && tv.isAvailable) {
