@@ -26,6 +26,8 @@ class FavoritosStore(context: Context) {
         emptyList()
     }
 
+    fun apagar(email: String) { p.edit().remove(email).apply() }
+
     fun salvar(email: String, lista: List<DriveFile>) {
         val arr = JSONArray()
         lista.forEach {
