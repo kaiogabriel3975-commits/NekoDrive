@@ -23,6 +23,14 @@ class PlaybackStore(context: Context) {
         )
     }
 
+    /** Esquece a posição e o "assistido" de todos os vídeos desta conta. */
+    fun apagar(email: String) {
+        val prefixo = "$email|"
+        val editor = p.edit()
+        p.all.keys.filter { it.startsWith(prefixo) }.forEach { editor.remove(it) }
+        editor.apply()
+    }
+
     fun salvar(email: String, id: String, posicaoMs: Long, duracaoMs: Long) {
         if (duracaoMs <= 0) return
         val antes = obter(email, id)
