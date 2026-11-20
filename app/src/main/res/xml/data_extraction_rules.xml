@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  O que o Android copia para a nuvem (backup) e para um aparelho novo.
+  Só as preferências do app (contas listadas, favoritos, capas, posição dos vídeos, ajustes).
+  Ficam de fora: o log de funcionamento (filesDir) e todos os caches (fotos e vídeos), que são grandes e se refazem.
+  As autorizações do Google não são guardadas no aparelho: em um aparelho novo o app pede a confirmação de novo.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="sharedpref" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="sharedpref" path="." />
+    </device-transfer>
+</data-extraction-rules>
