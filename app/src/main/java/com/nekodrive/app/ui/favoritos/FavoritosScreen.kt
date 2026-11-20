@@ -77,7 +77,7 @@ fun FavoritosScreen(
     var alturaTopo by remember { mutableStateOf(0.dp) }
     BackHandler(enabled = vm.selecionados.isNotEmpty()) { vm.limparSelecao() }
     LaunchedEffect(vm.contaAtual?.email) { vm.carregarFavoritos() }
-    val rebote = rememberRebote(carregando = vm.carregandoFavoritos, aoAtualizar = { vm.carregarFavoritos() })
+    val rebote = rememberRebote(carregando = vm.carregandoFavoritos, aoAtualizar = { vm.carregarFavoritos(forcar = true) })
 
     val lista = vm.favoritosItens.filter { it.id !in vm.indisponiveis }
     val aoTocar: (DriveFile) -> Unit = { f ->
@@ -105,6 +105,7 @@ fun FavoritosScreen(
                             ItemGrade(
                                 f, vm.token, f.id in vm.selecionados, vm.estadoDe(f), st, av, av,
                                 { aoTocar(f) }, { vm.alternarSelecao(f) },
+                                aoCancelarDownload = { vm.cancelarDownload(f) },
                             )
                         }
                     }
@@ -119,6 +120,7 @@ fun FavoritosScreen(
                                 f, vm.token, f.id in vm.selecionados, vm.estadoDe(f), st, av, av,
                                 { aoTocar(f) }, { vm.alternarSelecao(f) },
                                 ladoMiniatura = ladoMiniaturaLista(vm.tamanhoMiniatura),
+                                aoCancelarDownload = { vm.cancelarDownload(f) },
                             )
                         }
                     }
