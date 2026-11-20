@@ -11,7 +11,9 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import com.nekodrive.app.ui.Animacoes
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nekodrive.app.data.AppContainer
@@ -28,6 +30,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -71,7 +74,7 @@ enum class CampoOrdem(val rotulo: String, val chaveApi: String) {
     Tamanho("Tamanho", "quotaBytesUsed"),
 }
 
-class DriveViewModel(private val c: AppContainer) : ViewModel() {
+class DriveViewModel(private val c: AppContainer, private val estadoSalvo: SavedStateHandle) : ViewModel() {
     private val raiz = Pasta("root", "Meu Drive")
 
     var contas by mutableStateOf(c.accounts.load()); private set
@@ -221,8 +224,29 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
         Animacoes.modo = c.prefs.animacoes
         contaAtual = contas.firstOrNull { it.email == c.accounts.currentEmail } ?: contas.firstOrNull()
         c.midia.definirConta(contaAtual?.email)
+        restaurarPilha()
         recarregarFavoritosLocais()
         recarregar()
+        // a pasta aberta é guardada a cada mudança: se o Android encerrar o app em segundo plano, volta para ela
+        viewModelScope.launch {
+            snapshotFlow { pilha }.collect { guardarPilha(it) }
+        }
+    }
+
+    /** Volta para a pasta em que o usuário estava, se o app foi encerrado pelo sistema (só para a mesma conta). */
+    private fun restaurarPilha() {
+        val ids = estadoSalvo.get<ArrayList<String>>(CHAVE_PILHA_IDS)
+        val nomes = estadoSalvo.get<ArrayList<String>>(CHAVE_PILHA_NOMES)
+        val dona = estadoSalvo.get<String>(CHAVE_PILHA_CONTA)
+        if (ids == null || nomes == null || ids.size != nomes.size || ids.isEmpty()) return
+        if (dona == null || dona != contaAtual?.email || ids.first() != raiz.id) return
+        pilha = ids.indices.map { Pasta(ids[it], nomes[it]) }
+    }
+
+    private fun guardarPilha(p: List<Pasta>) {
+        estadoSalvo[CHAVE_PILHA_IDS] = ArrayList(p.map { it.id })
+        estadoSalvo[CHAVE_PILHA_NOMES] = ArrayList(p.map { it.nome })
+        estadoSalvo[CHAVE_PILHA_CONTA] = contaAtual?.email
     }
 
     fun mostrarErro(msg: String) { erro = msg }
@@ -825,6 +849,14 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     /** Texto do que está acontecendo em segundo plano (envio, cópia ou movimentação); null se nada. */
     var operacao by mutableStateOf<String?>(null); private set
 
+    // jobs de envio/cópia/movimentação em andamento (só mexidos na thread principal)
+    private val operacoes = mutableSetOf<Job>()
+
+    /** Cancela o envio, a cópia ou a movimentação em andamento. O que já foi concluído permanece. */
+    fun cancelarOperacao() {
+        operacoes.toList().forEach { it.cancel() }
+    }
+
     fun abrirSeletorDestino(copiar: Boolean) {
         val alvos = itens.filter { it.id in selecionados }
         if (alvos.isEmpty()) return
@@ -844,29 +876,39 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
         val alvos = alvosDestino
         seletorDestino = null
         viewModelScope.launch {
+            val eu = coroutineContext[Job]!!
+            operacoes += eu
             var feitos = 0
             var falhas = 0
-            alvos.forEachIndexed { i, f ->
-                operacao = (if (copiar) "Copiando" else "Movendo") + " ${i + 1}/${alvos.size}: ${f.name}"
-                try {
-                    if (copiar) c.drive.copiar(conta.email, f, idDestino) else c.drive.mover(conta.email, f.id, idDestino)
-                    feitos++
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    falhas++
-                    erro = "Não foi possível ${if (copiar) "copiar" else "mover"} ${f.name}: ${e.message}"
+            try {
+                alvos.forEachIndexed { i, f ->
+                    operacao = (if (copiar) "Copiando" else "Movendo") + " ${i + 1}/${alvos.size}: ${f.name}"
+                    try {
+                        if (copiar) c.drive.copiar(conta.email, f, idDestino) else c.drive.mover(conta.email, f.id, idDestino)
+                        feitos++
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        falhas++
+                        erro = "Não foi possível ${if (copiar) "copiar" else "mover"} ${f.name}: ${e.message}"
+                    }
                 }
-            }
-            operacao = null
-            if (feitos > 0) {
-                aviso = "$feitos item(ns) ${if (copiar) "copiado(s)" else "movido(s)"} para $nomeDestino" +
-                    if (falhas > 0) " ($falhas com erro)" else ""
-                limparSelecao()
-                versaoCache++
-                // A lista em cache da pasta de destino ficou velha (ex.: mover para a pasta de cima e voltar).
-                cache.remove(chave(idDestino))
-                recarregar()
+            } finally {
+                // também roda ao cancelar: o que já foi feito aparece na lista e a pílula some
+                operacoes -= eu
+                operacao = null
+                val cancelada = !isActive
+                if (feitos > 0) {
+                    aviso = "$feitos item(ns) ${if (copiar) "copiado(s)" else "movido(s)"} para $nomeDestino" +
+                        (if (falhas > 0) " ($falhas com erro)" else "") + (if (cancelada) " — cancelado" else "")
+                    limparSelecao()
+                    versaoCache++
+                    // A lista em cache da pasta de destino ficou velha (ex.: mover para a pasta de cima e voltar).
+                    cache.remove(chave(idDestino))
+                    recarregar()
+                } else if (cancelada) {
+                    aviso = "Operação cancelada"
+                }
             }
         }
     }
@@ -895,44 +937,53 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
         if (uris.isEmpty()) return
         val pai = pilha.last().id
         viewModelScope.launch {
+            val eu = coroutineContext[Job]!!
+            operacoes += eu
             var ok = 0
-            uris.forEachIndexed { i, uri ->
-                var nome = "arquivo"
-                var tamanho = -1L
-                runCatching {
-                    c.resolver.query(uri, null, null, null, null)?.use { cur ->
-                        if (cur.moveToFirst()) {
-                            val iNome = cur.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                            val iTam = cur.getColumnIndex(android.provider.OpenableColumns.SIZE)
-                            if (iNome >= 0) nome = cur.getString(iNome) ?: nome
-                            if (iTam >= 0 && !cur.isNull(iTam)) tamanho = cur.getLong(iTam)
+            try {
+                uris.forEachIndexed { i, uri ->
+                    var nome = "arquivo"
+                    var tamanho = -1L
+                    runCatching {
+                        c.resolver.query(uri, null, null, null, null)?.use { cur ->
+                            if (cur.moveToFirst()) {
+                                val iNome = cur.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                                val iTam = cur.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                                if (iNome >= 0) nome = cur.getString(iNome) ?: nome
+                                if (iTam >= 0 && !cur.isNull(iTam)) tamanho = cur.getLong(iTam)
+                            }
                         }
                     }
+                    val mime = c.resolver.getType(uri) ?: "application/octet-stream"
+                    val prefixo = "Enviando ${i + 1}/${uris.size}: $nome"
+                    operacao = prefixo
+                    var ultimo = -1
+                    try {
+                        c.drive.enviar(
+                            conta.email, nome, mime, tamanho, pai,
+                            abrir = { c.resolver.openInputStream(uri) ?: throw java.io.IOException("Não foi possível ler $nome") },
+                            aoProgresso = { p ->
+                                val pct = (p * 100).toInt()
+                                if (pct != ultimo) { ultimo = pct; operacao = "$prefixo ($pct%)" }
+                            },
+                        )
+                        ok++
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        erro = "Falha ao enviar $nome: ${e.message}"
+                    }
                 }
-                val mime = c.resolver.getType(uri) ?: "application/octet-stream"
-                val prefixo = "Enviando ${i + 1}/${uris.size}: $nome"
-                operacao = prefixo
-                var ultimo = -1
-                try {
-                    c.drive.enviar(
-                        conta.email, nome, mime, tamanho, pai,
-                        abrir = { c.resolver.openInputStream(uri) ?: throw java.io.IOException("Não foi possível ler $nome") },
-                        aoProgresso = { p ->
-                            val pct = (p * 100).toInt()
-                            if (pct != ultimo) { ultimo = pct; operacao = "$prefixo ($pct%)" }
-                        },
-                    )
-                    ok++
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    erro = "Falha ao enviar $nome: ${e.message}"
+            } finally {
+                operacoes -= eu
+                operacao = null
+                val cancelado = !isActive
+                if (ok > 0) {
+                    aviso = "$ok arquivo(s) enviado(s)" + if (cancelado) " — cancelado" else ""
+                    recarregar()
+                } else if (cancelado) {
+                    aviso = "Envio cancelado"
                 }
-            }
-            operacao = null
-            if (ok > 0) {
-                aviso = "$ok arquivo(s) enviado(s)"
-                recarregar()
             }
         }
     }
@@ -1296,6 +1347,16 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
         c.auth.forget(conta.email)
         contas = contas.filterNot { it.email == conta.email }
         c.accounts.save(contas)
+        // Os dados locais da conta saem junto: favoritos, capas, posição dos vídeos e arquivos em cache.
+        // Nada é apagado do Drive.
+        val email = conta.email
+        c.favoritos.apagar(email)
+        c.capas.apagar(email)
+        c.playback.apagar(email)
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.midia.limparConta(email) } }
+            versaoCache++
+        }
         if (contaAtual?.email == conta.email) {
             val outra = contas.firstOrNull()
             if (outra != null) {
@@ -1318,3 +1379,7 @@ private const val IDADE_LIMPEZA_COPIAS_MS = 10 * 60 * 1000L
 
 /** Intervalo mínimo entre conferências automáticas dos favoritos no Drive. */
 private const val INTERVALO_FAVORITOS_MS = 3 * 60 * 1000L
+
+private const val CHAVE_PILHA_IDS = "pilha_ids"
+private const val CHAVE_PILHA_NOMES = "pilha_nomes"
+private const val CHAVE_PILHA_CONTA = "pilha_conta"
