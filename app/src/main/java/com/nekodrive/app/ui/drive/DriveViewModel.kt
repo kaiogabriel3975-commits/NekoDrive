@@ -462,15 +462,24 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
         if (ids.isEmpty()) return
         viewModelScope.launch {
             val falhas = mutableSetOf<String>()
-            for (id in ids) {
-                try {
-                    c.drive.trash(conta.email, id)
-                    tirarDasListas(id)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    falhas += id
-                }
+            // até 4 chamadas ao mesmo tempo (uma por vez era lento com muitos itens; mais que isso arrisca o limite
+            // da API). As listas e `falhas` só são mexidas aqui, na thread principal, então não há corrida.
+            val limite = Semaphore(4)
+            coroutineScope {
+                ids.map { id ->
+                    async {
+                        limite.withPermit {
+                            try {
+                                c.drive.trash(conta.email, id)
+                                tirarDasListas(id)
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                falhas += id
+                            }
+                        }
+                    }
+                }.awaitAll()
             }
             selecionados = falhas
             if (falhas.isNotEmpty()) erro = "Não foi possível mover ${falhas.size} item(ns) para a lixeira."
@@ -644,6 +653,14 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
             capa = if (f.isFolder) capas[f.id]?.let { idDaCapa(it) } else null,
             capaLink = if (f.isFolder) capas[f.id]?.let { linkDaCapa(it) } else null,
         )
+    }
+
+    /** Cancela o download deste arquivo, em andamento ou ainda na fila. O que já foi baixado de mídia fica no cache. */
+    fun cancelarDownload(f: DriveFile) {
+        val tarefa = tarefas[f.id] ?: return
+        if (!tarefa.isActive) return
+        tarefa.cancel()
+        aviso = "Download de “${f.name}” cancelado"
     }
 
     /**
@@ -1085,10 +1102,19 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     /** Atualiza os metadados dos favoritos (miniaturas expiram) e marca os que sumiram do Drive. */
-    fun carregarFavoritos() {
+    private var ultimaAtualizacaoFavoritos = 0L
+    private var contaDaAtualizacaoFavoritos: String? = null
+
+    /**
+     * Confere cada favorito no Drive (uma chamada por item). Ao abrir a aba isso só se repete depois de
+     * [INTERVALO_FAVORITOS_MS]; puxar para atualizar ([forcar]) sempre confere. Não roda duas vezes ao mesmo tempo.
+     */
+    fun carregarFavoritos(forcar: Boolean = false) {
         val conta = contaAtual ?: return
         val atuais = favoritosItens
-        if (atuais.isEmpty()) return
+        if (atuais.isEmpty() || carregandoFavoritos) return
+        val agora = SystemClock.elapsedRealtime()
+        if (!forcar && conta.email == contaDaAtualizacaoFavoritos && agora - ultimaAtualizacaoFavoritos < INTERVALO_FAVORITOS_MS) return
         carregandoFavoritos = true
         viewModelScope.launch {
             try {
@@ -1127,6 +1153,9 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
                     val aindaFavoritos = agora.mapTo(HashSet()) { it.id }
                     indisponiveis = sumidos.filterTo(HashSet()) { it in aindaFavoritos }
                     token = c.auth.token(conta.email)
+                    // só conta como atualizado quando a conferência terminou (sem rede, tenta de novo na próxima visita)
+                    ultimaAtualizacaoFavoritos = SystemClock.elapsedRealtime()
+                    contaDaAtualizacaoFavoritos = conta.email
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -1187,15 +1216,22 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
         if (ids.isEmpty()) return
         viewModelScope.launch {
             val falhas = mutableSetOf<String>()
-            for (id in ids) {
-                try {
-                    acao(conta.email, id)
-                    lixeira = lixeira.filterNot { it.id == id }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    falhas += id
-                }
+            val limite = Semaphore(4)
+            coroutineScope {
+                ids.map { id ->
+                    async {
+                        limite.withPermit {
+                            try {
+                                acao(conta.email, id)
+                                lixeira = lixeira.filterNot { it.id == id }
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                falhas += id
+                            }
+                        }
+                    }
+                }.awaitAll()
             }
             selecionados = falhas
             if (falhas.isNotEmpty()) erroLixeira = "Não foi possível $titulo ${falhas.size} item(ns)."
@@ -1279,3 +1315,6 @@ class DriveViewModel(private val c: AppContainer) : ViewModel() {
 
 /** Cópias para compartilhar/abrir/copiar só são apagadas depois deste tempo. */
 private const val IDADE_LIMPEZA_COPIAS_MS = 10 * 60 * 1000L
+
+/** Intervalo mínimo entre conferências automáticas dos favoritos no Drive. */
+private const val INTERVALO_FAVORITOS_MS = 3 * 60 * 1000L
