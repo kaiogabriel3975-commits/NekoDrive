@@ -107,6 +107,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -139,7 +140,7 @@ enum class Destino(val rotulo: String, val icone: ImageVector, val iconeSelecion
 fun NekoDriveApp() {
     val context = LocalContext.current
     val container = (context.applicationContext as NekoDriveApplication).container
-    val vm: DriveViewModel = viewModel(factory = viewModelFactory { initializer { DriveViewModel(container) } })
+    val vm: DriveViewModel = viewModel(factory = viewModelFactory { initializer { DriveViewModel(container, createSavedStateHandle()) } })
     val scope = rememberCoroutineScope()
 
     var atual by rememberSaveable { mutableStateOf(Destino.Drive) }
