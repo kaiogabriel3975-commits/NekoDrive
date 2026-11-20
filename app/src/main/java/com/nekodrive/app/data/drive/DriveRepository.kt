@@ -3,6 +3,9 @@ package com.nekodrive.app.data.drive
 import com.nekodrive.app.data.auth.AuthManager
 import com.nekodrive.app.data.auth.GoogleAccount
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -331,6 +334,8 @@ class DriveRepository(private val auth: AuthManager) {
 
     /** Baixa o conteúdo original para um fluxo de saída (usado para salvar em Downloads), com progresso de 0 a 1. */
     suspend fun baixarParaStream(email: String, id: String, saida: OutputStream, aoProgresso: (Float) -> Unit) {
+        // A leitura é bloqueante e não enxerga o cancelamento sozinha: confere a cada bloco se ainda vale a pena.
+        val tarefa = currentCoroutineContext()[Job]
         comToken(email) { token ->
             val url = (api + "files/" + id).toHttpUrl().newBuilder().addQueryParameter("alt", "media").build()
             val req = Request.Builder().url(url).header("Authorization", "Bearer $token").build()
@@ -343,6 +348,7 @@ class DriveRepository(private val auth: AuthManager) {
                 val buffer = ByteArray(64 * 1024)
                 corpo.byteStream().use { entrada ->
                     while (true) {
+                        tarefa?.ensureActive()
                         val n = entrada.read(buffer)
                         if (n < 0) break
                         saida.write(buffer, 0, n)
