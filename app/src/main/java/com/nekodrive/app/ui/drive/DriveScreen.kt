@@ -33,9 +33,11 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalOverscrollConfiguration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -113,6 +115,12 @@ import com.nekodrive.app.ui.LocalRenovarCapa
 import com.nekodrive.app.ui.LocalMiniaturasSoCache
 import com.nekodrive.app.ui.LocalMostrarNomes
 import com.nekodrive.app.ui.LocalVibrar
+import com.nekodrive.app.ui.LocalVidroAtivo
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.hazeSource
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
@@ -700,6 +708,7 @@ private fun PaginaPasta(
                                         f, vm.token, f.id in vm.selecionados, vm.estadoDe(f), st, av, avExterno,
                                         { aoTocar(f) }, { vm.alternarSelecao(f) },
                                         alfaTexto = alfaTextos,
+                                        aoCancelarDownload = { vm.cancelarDownload(f) },
                                     )
                                 } else {
                                     ItemLinha(
@@ -707,6 +716,7 @@ private fun PaginaPasta(
                                         { aoTocar(f) }, { vm.alternarSelecao(f) },
                                         alfaTexto = alfaTextos,
                                         ladoMiniatura = ladoMiniaturaLista(vm.tamanhoMiniatura),
+                                        aoCancelarDownload = { vm.cancelarDownload(f) },
                                     )
                                 }
                             }
@@ -772,7 +782,8 @@ private fun FantasmaCard(nome: String, grade: Boolean, alfa: () -> Float) {
 private fun CarregandoMais(vm: DriveViewModel) {
     LaunchedEffect(vm.itens.size) { vm.carregarMais() }
     Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-        CircularProgressIndicator(Modifier.size(24.dp))
+        // com erro, o aviso e o "Tentar de novo" já estão na tela: não deixa um spinner girando para sempre
+        if (vm.carregando || vm.erro == null) CircularProgressIndicator(Modifier.size(24.dp))
     }
 }
 
@@ -790,12 +801,23 @@ private fun Miniatura(
     aoCor: ((Color) -> Unit)? = null,
     /** Na grade, a capa da pasta é desenhada pelo card inteiro; aqui fica só o selo de pasta. */
     capaNoCard: Boolean = false,
+    /** Chamado pelo botão de cancelar que aparece sobre a miniatura enquanto o arquivo baixa. */
+    aoCancelar: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val ehGif = f.mimeType == "image/gif"
     val animarGifs = LocalAnimarGifs.current
     val soCache = LocalMiniaturasSoCache.current
+    val progresso = estado.progresso
+    val comProgresso = progresso != null && progresso >= 0f
+    val vidroAtivo = LocalVidroAtivo.current
+    // O botão de cancelar desfoca a própria miniatura: ela é a "fonte" do blur, só enquanto baixa
+    val haze = if (comProgresso && vidroAtivo) remember { HazeState() } else null
     Box(modifier.background(fundo), contentAlignment = Alignment.Center) {
+      Box(
+        Modifier.fillMaxSize().then(if (haze != null) Modifier.hazeSource(haze) else Modifier),
+        contentAlignment = Alignment.Center,
+      ) {
         val capa = estado.capa
         if (f.isFolder && capa != null) {
             // pasta com capa: a foto escolhida preenche o espaço, com um selo de pasta no canto
@@ -805,17 +827,21 @@ private fun Miniatura(
             // GIF animado (ajuste ligado) vem do arquivo; senão usa a miniatura estática do Drive, que é bem mais leve
             val animar = ehGif && animarGifs
             val doArquivo = animar || (ehGif && f.thumbnailLink == null)
-            val request = ImageRequest.Builder(context)
-                .data(if (doArquivo) "https://www.googleapis.com/drive/v3/files/${f.id}?alt=media" else f.thumbnailLink)
-                .apply { if (token != null) addHeader("Authorization", "Bearer $token") }
-                .apply { if (animar) { size(256, 256); emLoop() } }
-                // chave estável: a miniatura guardada continua valendo mesmo quando o link do Drive muda
-                .diskCacheKey("miniatura-${if (doArquivo) "arq" else "thumb"}-${f.id}-${f.modifiedTime}")
-                .memoryCacheKey("miniatura-${if (doArquivo) "arq" else "thumb"}-${f.id}-${f.modifiedTime}")
-                .networkCachePolicy(if (soCache) CachePolicy.DISABLED else CachePolicy.ENABLED)
-                .allowHardware(false)
-                .crossfade(!Animacoes.sem)
-                .build()
+            val semAnimacao = Animacoes.sem
+            // remember: o pedido não é remontado a cada recomposição do item
+            val request = remember(context, f.id, f.modifiedTime, f.thumbnailLink, doArquivo, animar, token, soCache, semAnimacao) {
+                ImageRequest.Builder(context)
+                    .data(if (doArquivo) "https://www.googleapis.com/drive/v3/files/${f.id}?alt=media" else f.thumbnailLink)
+                    .apply { if (token != null) addHeader("Authorization", "Bearer $token") }
+                    .apply { if (animar) { size(256, 256); emLoop() } }
+                    // chave estável: a miniatura guardada continua valendo mesmo quando o link do Drive muda
+                    .diskCacheKey("miniatura-${if (doArquivo) "arq" else "thumb"}-${f.id}-${f.modifiedTime}")
+                    .memoryCacheKey("miniatura-${if (doArquivo) "arq" else "thumb"}-${f.id}-${f.modifiedTime}")
+                    .networkCachePolicy(if (soCache) CachePolicy.DISABLED else CachePolicy.ENABLED)
+                    .allowHardware(false)
+                    .crossfade(!semAnimacao)
+                    .build()
+            }
             AsyncImage(
                 request, f.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
                 onSuccess = { s ->
@@ -839,24 +865,59 @@ private fun Miniatura(
                 tint = if (f.isFolder) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        }
         // indicadores: sempre na borda inferior esquerda, enfileirados (mídias privadas não têm indicador de link)
-        val progresso = estado.progresso
-        val comProgresso = progresso != null && progresso >= 0f
         val capaDePasta = f.isFolder && estado.capa != null
-        if (capaDePasta || comProgresso || estado.noCache || estado.favorito || f.publico) {
+        if (capaDePasta || (estado.noCache && !comProgresso) || estado.favorito || f.publico) {
             Row(
                 Modifier.align(Alignment.BottomStart).padding(4.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (capaDePasta) Indicador(Icons.Rounded.Folder, "Pasta")
-                if (comProgresso) {
-                    CircularProgressIndicator(progress = { progresso!! }, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                } else if (estado.noCache) {
-                    Indicador(Icons.Rounded.DownloadDone, "Salvo no cache")
-                }
+                if (estado.noCache && !comProgresso) Indicador(Icons.Rounded.DownloadDone, "Salvo no cache")
                 if (estado.favorito) Indicador(Icons.Rounded.Star, "Favorito", Color(0xFFFFC107))
                 if (f.publico) Indicador(Icons.Rounded.Link, "Qualquer pessoa com o link pode abrir")
+            }
+        }
+        // download em andamento: botão de cancelar com blur no centro e o progresso em anel ao redor dele
+        if (comProgresso) BotaoCancelarDownload(progresso!!, haze, aoCancelar)
+    }
+}
+
+private val EstiloBotaoCancelar = HazeStyle(
+    backgroundColor = Color.Black,
+    tint = HazeTint(Color.Black.copy(alpha = 0.30f)),
+    blurRadius = 14.dp,
+    noiseFactor = 0f,
+)
+
+/** Círculo com blur sobre a miniatura (X para cancelar) com o progresso do download em anel ao redor. */
+@Composable
+private fun BotaoCancelarDownload(progresso: Float, haze: HazeState?, aoCancelar: (() -> Unit)?) {
+    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        // acompanha o tamanho da miniatura (grade grande, média ou lista), sem ficar minúsculo nem enorme
+        val lado = (minOf(maxWidth, maxHeight) * 0.46f).coerceIn(24.dp, 44.dp)
+        Box(Modifier.size(lado + 10.dp), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(
+                progress = { progresso },
+                modifier = Modifier.fillMaxSize(),
+                color = Color.White,
+                trackColor = Color.White.copy(alpha = 0.30f),
+                strokeWidth = 3.dp,
+            )
+            Box(
+                Modifier.size(lado).clip(CircleShape)
+                    .then(
+                        if (haze != null) Modifier.hazeEffect(state = haze, style = EstiloBotaoCancelar) { blurEnabled = true }
+                        else Modifier.background(Color.Black.copy(alpha = 0.6f)),
+                    )
+                    .then(if (aoCancelar != null) Modifier.clickable(onClickLabel = "Cancelar download", onClick = aoCancelar) else Modifier),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (aoCancelar != null) {
+                    Icon(Icons.Rounded.Close, "Cancelar download", tint = Color.White, modifier = Modifier.size(lado * 0.5f))
+                }
             }
         }
     }
@@ -983,6 +1044,7 @@ internal fun ItemGrade(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     alfaTexto: () -> Float = { 1f },
+    aoCancelarDownload: (() -> Unit)? = null,
 ) {
     val haptico = LocalHapticFeedback.current
     val vibrar = LocalVibrar.current
@@ -1024,6 +1086,7 @@ internal fun ItemGrade(
                     f, token, estado, 44.dp, Modifier.fillMaxSize(),
                     aoCor = tinta.aoCor,
                     capaNoCard = true,
+                    aoCancelar = aoCancelarDownload,
                 )
                 if (selecionado) {
                     Icon(
@@ -1061,6 +1124,7 @@ internal fun ItemLinha(
     onLongClick: () -> Unit,
     alfaTexto: () -> Float = { 1f },
     ladoMiniatura: Dp = 56.dp,
+    aoCancelarDownload: (() -> Unit)? = null,
 ) {
     val haptico = LocalHapticFeedback.current
     val vibrar = LocalVibrar.current
@@ -1097,6 +1161,7 @@ internal fun ItemLinha(
             Modifier.size(ladoMiniatura).then(origem).clip(RoundedCornerShape(10.dp)),
             fundo = tema.surfaceVariant,
             aoCor = tinta.aoCor,
+            aoCancelar = aoCancelarDownload,
         )
         Column(Modifier.weight(1f).padding(start = 12.dp).graphicsLayer { alpha = alfaTexto() }) {
             NomeUmaLinha(f.name, Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyLarge, color = corNome)
