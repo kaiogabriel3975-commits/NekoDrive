@@ -5,6 +5,7 @@ import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheDataSink
 import androidx.media3.datasource.cache.CacheDataSource
@@ -40,6 +41,12 @@ class FormatoConvertido(val itag: String, val altura: Int, val url: String, val 
 
 private val ALTURA_PADRAO = mapOf("37" to 1080, "22" to 720, "59" to 480, "35" to 480, "18" to 360, "34" to 360)
 
+/**
+ * Cabeçalho interno que diz de qual conta é a requisição. O interceptor usa e remove: nunca vai para a rede.
+ * Sem ele, vale a conta atual do app. Assim um download da conta A não depende da conta que está na tela.
+ */
+private const val CABECALHO_CONTA = "X-Neko-Conta"
+
 /** O token do Drive só é enviado para estes endereços do Google. */
 private val HOSTS_COM_TOKEN = setOf("www.googleapis.com", "drive.google.com", "docs.google.com")
 
@@ -58,6 +65,8 @@ class JarMemoria : CookieJar {
         val agora = System.currentTimeMillis()
         return todos.filter { it.expiresAt > agora && it.matches(url) }
     }
+
+    fun limpar() = todos.clear()
 }
 
 /**
@@ -123,8 +132,11 @@ class MidiaCache(context: Context, private val auth: AuthManager, limiteGb: Int)
 
     /** Anexa o token da conta atual às requisições ao Google (renovado quando preciso). */
     private val cliente = OkHttpClient.Builder().addInterceptor { chain ->
-        val email = conta.get()
-        val req = chain.request()
+        val original = chain.request()
+        // a conta da própria requisição (cabeçalho interno, sempre removido) vale mais que a conta atual da tela
+        val daRequisicao = original.header(CABECALHO_CONTA)
+        val req = if (daRequisicao != null) original.newBuilder().removeHeader(CABECALHO_CONTA).build() else original
+        val email = daRequisicao ?: conta.get()
         if (email == null || req.url.host !in HOSTS_COM_TOKEN) {
             chain.proceed(req)
         } else {
@@ -140,7 +152,10 @@ class MidiaCache(context: Context, private val auth: AuthManager, limiteGb: Int)
     /** Servidor local usado para transmitir ao Chromecast. */
     val servidor: ServidorLocal by lazy { ServidorLocal(cliente) }
 
-    fun definirConta(email: String?) { conta.set(email) }
+    fun definirConta(email: String?) {
+        // os cookies da versão convertida pertencem à conta que os pediu: não passam para a outra conta
+        if (conta.getAndSet(email) != email) cookies.limpar()
+    }
 
     fun urlOriginal(id: String): String = url(id)
 
@@ -152,12 +167,11 @@ class MidiaCache(context: Context, private val auth: AuthManager, limiteGb: Int)
      * Usa um endereço NÃO oficial do Drive, que pode mudar ou deixar de funcionar.
      */
     suspend fun formatosConvertidos(email: String, id: String): List<FormatoConvertido> = withContext(Dispatchers.IO) {
-        conta.set(email)
         val endereco = "https://drive.google.com/get_video_info".toHttpUrl().newBuilder()
             .addQueryParameter("docid", id)
             .addQueryParameter("drive_originator_app", "303")
             .build()
-        val corpo = cliente.newCall(Request.Builder().url(endereco).build()).execute()
+        val corpo = cliente.newCall(Request.Builder().url(endereco).header(CABECALHO_CONTA, email).build()).execute()
             .use { it.body?.string().orEmpty() }
         val campos = corpo.split('&').mapNotNull { par ->
             val i = par.indexOf('=')
@@ -199,7 +213,13 @@ class MidiaCache(context: Context, private val auth: AuthManager, limiteGb: Int)
             .setCacheWriteDataSinkFactory(
                 CacheDataSink.Factory().setCache(cache).setFragmentSize(C.LENGTH_UNSET.toLong()),
             )
-            .setUpstreamDataSourceFactory(OkHttpDataSource.Factory(cliente))
+            // a chave do cache começa com o e-mail da conta ("email|id"): vira o cabeçalho que o interceptor usa
+            .setUpstreamDataSourceFactory(
+                ResolvingDataSource.Factory(OkHttpDataSource.Factory(cliente)) { spec ->
+                    val dona = spec.key?.substringBefore('|', "")?.takeIf { '@' in it }
+                    if (dona != null) spec.withAdditionalHeaders(mapOf(CABECALHO_CONTA to dona)) else spec
+                },
+            )
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
     fun completo(email: String, f: DriveFile): Boolean {
@@ -216,7 +236,6 @@ class MidiaCache(context: Context, private val auth: AuthManager, limiteGb: Int)
 
     /** Baixa o arquivo inteiro para o cache; baixar de novo continua de onde parou. */
     suspend fun baixar(email: String, f: DriveFile, aoProgresso: (Float) -> Unit) {
-        conta.set(email)
         withContext(Dispatchers.IO) {
             val fonte = fabrica().createDataSourceForDownloading()
             val spec = DataSpec.Builder().setUri(url(f.id)).setKey(chave(email, f.id)).build()
