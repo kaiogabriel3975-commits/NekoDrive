@@ -85,6 +85,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -409,7 +410,10 @@ fun DriveScreen(
             vm.operacao?.let { texto ->
                 PilulaVidro(Modifier.padding(horizontal = 12.dp)) {
                     CircularProgressIndicator(Modifier.padding(start = 10.dp).size(18.dp), strokeWidth = 2.dp)
-                    Text(texto, Modifier.padding(horizontal = 10.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                    Text(texto, Modifier.weight(1f, fill = false).padding(horizontal = 10.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                    IconButton(onClick = { vm.cancelarOperacao() }, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Rounded.Close, "Cancelar", modifier = Modifier.size(18.dp))
+                    }
                 }
             }
             vm.erro?.let { msg ->
