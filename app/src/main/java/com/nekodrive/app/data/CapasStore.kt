@@ -17,6 +17,8 @@ class CapasStore(context: Context) {
         emptyMap()
     }
 
+    fun apagar(email: String) { p.edit().remove(email).apply() }
+
     fun salvar(email: String, mapa: Map<String, String>) {
         p.edit().putString(email, JSONObject(mapa as Map<*, *>).toString()).apply()
     }
