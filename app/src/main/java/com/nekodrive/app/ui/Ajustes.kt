@@ -89,7 +89,7 @@ val LocalRenovarCapa = staticCompositionLocalOf<(String) -> Unit> { {} }
 val LocalFundoCard = staticCompositionLocalOf { 0 }
 
 /** Wi-Fi ou cabo que não seja marcado como tarifado (hotspot de outro celular conta como dados móveis). */
-private fun redeSemTarifa(caps: NetworkCapabilities?): Boolean =
+internal fun redeSemTarifa(caps: NetworkCapabilities?): Boolean =
     caps != null &&
         (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) &&
         caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
