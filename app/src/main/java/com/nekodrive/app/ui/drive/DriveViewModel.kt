@@ -1313,7 +1313,7 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
 
     // ---------- contas ----------
 
-    fun aoAutorizar(accessToken: String?) {
+    fun aoAutorizar(accessToken: String?, renovacao: String?, validoMs: Long) {
         if (accessToken == null) {
             erro = "O Google não devolveu a autorização. Tente de novo."
             return
@@ -1321,7 +1321,17 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
         viewModelScope.launch {
             try {
                 val nova = c.drive.about(accessToken)
-                c.auth.remember(nova.email, accessToken)
+                // Sem o token de renovação a conta só funcionaria por cerca de 1 hora: não vale adicionar assim.
+                if (renovacao != null) {
+                    if (!c.auth.guardarRenovacao(nova.email, renovacao)) {
+                        erro = "Não foi possível guardar o acesso com segurança neste aparelho."
+                        return@launch
+                    }
+                } else if (!c.auth.temRenovacao(nova.email)) {
+                    erro = "O Google não enviou o token de renovação. Tente entrar de novo."
+                    return@launch
+                }
+                c.auth.remember(nova.email, accessToken, validoMs)
                 contas = contas.filterNot { it.email == nova.email } + nova
                 c.accounts.save(contas)
                 selecionar(nova)
