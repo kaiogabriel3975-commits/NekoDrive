@@ -13,5 +13,5 @@ object OAuthConfig {
     const val CLIENT_ID = "285732417229-ulkfnh7hrnkcbj8miogu23mk3oeh1h09.apps.googleusercontent.com"
     const val REDIRECT_URI = "com.nekodrive.app:/oauth2redirect"
 
-    val configurado: Boolean get() = !CLIENT_ID.startsWith("285732417229-ulkfnh7hrnkcbj8miogu23mk3oeh1h09.apps.googleusercontent.com")
+    val configurado: Boolean get() = !CLIENT_ID.startsWith("COLE_AQUI")
 }
