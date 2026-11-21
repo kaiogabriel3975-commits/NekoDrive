@@ -18,6 +18,8 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+        // Esquema do endereço de volta do login por navegador (tem que ser igual ao de OAuthConfig.REDIRECT_URI)
+        manifestPlaceholders["appAuthRedirectScheme"] = "com.nekodrive.app"
     }
 
     signingConfigs {
@@ -57,7 +59,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-savedstate:2.8.7")
     // o seletor de dispositivos do Cast usa um diálogo AppCompat (ver DialogoCast)
     implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("com.google.android.gms:play-services-auth:21.2.0")
+    // login por navegador (Custom Tab + PKCE); no lugar da API de autorização do Play Services
+    implementation("net.openid:appauth:0.11.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
