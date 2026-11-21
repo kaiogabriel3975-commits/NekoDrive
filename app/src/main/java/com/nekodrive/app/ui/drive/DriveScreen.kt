@@ -147,6 +147,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.nekodrive.app.data.cache.GifLeve
 import com.nekodrive.app.data.drive.DriveFile
 import com.nekodrive.app.ui.FaixaVidro
 import com.nekodrive.app.ui.IndicadorAtualizar
@@ -832,15 +833,21 @@ private fun Miniatura(
             val animar = ehGif && animarGifs
             val doArquivo = animar || (ehGif && f.thumbnailLink == null)
             val semAnimacao = Animacoes.sem
+            // GIF leve já gerado (ver GifLeve): é um arquivo local pequeno, usado no lugar do GIF original
+            val leve = remember(f.id, f.modifiedTime, animar) {
+                if (animar) GifLeve.pronto(context, f.id, f.modifiedTime) else null
+            }
+            val chaveOriginal = "miniatura-arq-${f.id}-${f.modifiedTime}"
             // remember: o pedido não é remontado a cada recomposição do item
-            val request = remember(context, f.id, f.modifiedTime, f.thumbnailLink, doArquivo, animar, token, soCache, semAnimacao) {
+            val request = remember(context, f.id, f.modifiedTime, f.thumbnailLink, doArquivo, animar, token, soCache, semAnimacao, leve) {
+                val chave = "miniatura-${if (doArquivo) "arq" else "thumb"}-${f.id}-${f.modifiedTime}"
                 ImageRequest.Builder(context)
-                    .data(if (doArquivo) "https://www.googleapis.com/drive/v3/files/${f.id}?alt=media" else f.thumbnailLink)
-                    .apply { if (token != null) addHeader("Authorization", "Bearer $token") }
+                    .data(leve ?: if (doArquivo) "https://www.googleapis.com/drive/v3/files/${f.id}?alt=media" else f.thumbnailLink)
+                    .apply { if (token != null && leve == null) addHeader("Authorization", "Bearer $token") }
                     .apply { if (animar) { size(256, 256); emLoop() } }
                     // chave estável: a miniatura guardada continua valendo mesmo quando o link do Drive muda
-                    .diskCacheKey("miniatura-${if (doArquivo) "arq" else "thumb"}-${f.id}-${f.modifiedTime}")
-                    .memoryCacheKey("miniatura-${if (doArquivo) "arq" else "thumb"}-${f.id}-${f.modifiedTime}")
+                    .diskCacheKey(chave)
+                    .memoryCacheKey(if (leve != null) "miniatura-leve-${f.id}-${f.modifiedTime}" else chave)
                     .networkCachePolicy(if (soCache) CachePolicy.DISABLED else CachePolicy.ENABLED)
                     .allowHardware(false)
                     .crossfade(!semAnimacao)
@@ -850,6 +857,8 @@ private fun Miniatura(
                 request, f.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
                 onSuccess = { s ->
                     if (f.isImage || f.isVideo) ProporcoesMidia.guardar(f.id, s.result.drawable)
+                    // o GIF inteiro acabou de chegar: gera a versão leve para as próximas aberturas
+                    if (animar && leve == null) GifLeve.agendar(context, f.id, f.modifiedTime, chaveOriginal)
                     if (aoCor != null) runCatching {
                         val cores = coresDaImagem(s.result.drawable)
                         if (cores.forte != Color.Unspecified) CoresMidia.guardarForte(f.id, cores.forte)
