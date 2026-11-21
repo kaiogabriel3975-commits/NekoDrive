@@ -1,11 +1,9 @@
 package com.nekodrive.app.ui
 
-import android.accounts.AccountManager
 import android.app.Activity
 import android.content.res.Configuration
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -59,6 +57,7 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInRoot
+import com.nekodrive.app.data.auth.OAuthConfig
 import com.nekodrive.app.ui.galeria.AmbienteLuz
 import com.nekodrive.app.ui.galeria.CirculoVidro
 import com.nekodrive.app.ui.galeria.LocalLuz
@@ -166,46 +165,41 @@ fun NekoDriveApp() {
     val redeWifi = rememberRedeWifi()
     val vidroCtx = remember(vidroEstado, vidroEstilo, vidroCabecalho, corVidro) { Vidro(vidroEstado, vidroEstilo, vidroCabecalho, corVidro) }
 
-    // 1) tela de consentimento do Google (quando necessária)
-    val consentimento = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
-        try {
-            vm.aoAutorizar(container.auth.fromIntent(res.data).accessToken)
-        } catch (e: Exception) {
-            vm.mostrarErro("Login cancelado ou não concluído.")
-        }
-    }
-    // 2) autoriza o Drive para a conta escolhida
-    val autorizar: (String) -> Unit = { email ->
-        scope.launch {
-            try {
-                val r = container.auth.authorize(email)
-                val pendente = r.pendingIntent
-                if (r.hasResolution() && pendente != null) {
-                    consentimento.launch(IntentSenderRequest.Builder(pendente.intentSender).build())
-                } else {
-                    vm.aoAutorizar(r.accessToken)
+    // 1) login do Google no navegador (Custom Tab, código + PKCE); o resultado volta aqui
+    val loginNavegador = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+        // fechar a aba sem terminar não é erro: nada acontece
+        if (res.resultCode == Activity.RESULT_OK) {
+            scope.launch {
+                try {
+                    val login = container.auth.concluirLogin(res.data)
+                    vm.aoAutorizar(login.accessToken, login.renovacao, login.validoMs)
+                } catch (e: Exception) {
+                    vm.mostrarErro("Falha ao entrar: ${e.message}")
                 }
-            } catch (e: Exception) {
-                vm.mostrarErro("Falha ao entrar: ${e.message}")
             }
         }
     }
-    // Autorização expirada/revogada: reabre a confirmação do Google para a mesma conta (uma vez por falha)
+    // 2) abre o login: com [email] já vem na conta certa (autorização expirada); sem ele, escolhe a conta
+    val autorizar: (String?) -> Unit = { email ->
+        if (!OAuthConfig.configurado) {
+            vm.mostrarErro("Falta configurar o ID do cliente OAuth (arquivo OAuthConfig.kt).")
+        } else {
+            try {
+                loginNavegador.launch(container.auth.intentDeLogin(email))
+            } catch (e: Exception) {
+                vm.mostrarErro("Não foi possível abrir o navegador para entrar: ${e.message}")
+            }
+        }
+    }
+    // Autorização expirada/revogada: reabre o login para a mesma conta (uma vez por falha)
     LaunchedEffect(vm.reautorizar) {
         vm.reautorizar?.let { email ->
             vm.consumirReautorizacao()
             autorizar(email)
         }
     }
-    // 3) seletor de contas do Android (permite escolher outra conta ou adicionar uma nova)
-    val escolherConta = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
-        val email = res.data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)
-        if (res.resultCode == Activity.RESULT_OK && email != null) autorizar(email)
-    }
-    val entrar: () -> Unit = {
-        val intent = AccountManager.newChooseAccountIntent(null, null, arrayOf("com.google"), null, null, null, null)
-        escolherConta.launch(intent)
-    }
+    // 3) entrar com outra conta (ou a primeira): o Google mostra a escolha, qualquer conta serve
+    val entrar: () -> Unit = { autorizar(null) }
 
     // Toque em "Drive": se já estiver na aba, volta para o início
     val aoSelecionar: (Destino) -> Unit = { d ->
