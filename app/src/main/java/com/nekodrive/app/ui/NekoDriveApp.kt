@@ -180,9 +180,13 @@ fun NekoDriveApp() {
         }
     }
     // 2) abre o login: com [email] já vem na conta certa (autorização expirada); sem ele, escolhe a conta
+    // sem o ID do cliente do Google Cloud não há login: abre a tela de configuração e continua depois de salvar
+    var configGoogle by remember { mutableStateOf(false) }
+    var emailPendente by remember { mutableStateOf<String?>(null) }
     val autorizar: (String?) -> Unit = { email ->
-        if (!OAuthConfig.configurado) {
-            vm.mostrarErro("Falta configurar o ID do cliente OAuth (arquivo OAuthConfig.kt).")
+        if (!OAuthConfig.configurado(context)) {
+            emailPendente = email
+            configGoogle = true
         } else {
             try {
                 loginNavegador.launch(container.auth.intentDeLogin(email))
@@ -190,6 +194,16 @@ fun NekoDriveApp() {
                 vm.mostrarErro("Não foi possível abrir o navegador para entrar: ${e.message}")
             }
         }
+    }
+    if (configGoogle) {
+        ConfigurarGoogleDialog(
+            onFechar = { configGoogle = false },
+            onSalvo = {
+                configGoogle = false
+                // quem queria entrar continua direto no login
+                autorizar(emailPendente)
+            },
+        )
     }
     // Autorização expirada/revogada: reabre o login para a mesma conta (uma vez por falha)
     LaunchedEffect(vm.reautorizar) {
