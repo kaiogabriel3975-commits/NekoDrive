@@ -1,4 +1,5 @@
 [Uploading README.md…]()
+[Uploading README.md…]()
 # nekodrive
 
 App Android (Kotlin + Jetpack Compose) para ver vídeos e fotos do Google Drive.
@@ -40,9 +41,13 @@ Para o login funcionar, configure o Google Cloud (uma vez):
 1. Crie um projeto em console.cloud.google.com e ative a **Google Drive API**.
 2. Em **Google Auth Platform** (tela de consentimento): tipo Externo, adicione o escopo
    `https://www.googleapis.com/auth/drive`.
-3. Em **Clientes**, crie um cliente **Android** com o pacote `com.nekodrive.app` e o **SHA-1 da sua keystore fixa**
-   (veja o comando acima). Com a chave de debug o login falha (erro de desenvolvedor).
-4. Status do app:
+3. Em **Clientes**, abra (ou crie) o cliente **Android** com o pacote `com.nekodrive.app` e o **SHA-1 da sua keystore fixa**
+   (veja o comando acima). Em **Configurações avançadas** do cliente, ligue **Ativar esquema de URI personalizado**
+   (o login por navegador volta ao app por `com.nekodrive.app:/oauth2redirect`). Copie o **ID do cliente**.
+4. Cole o ID do cliente em `app/src/main/java/com/nekodrive/app/data/auth/OAuthConfig.kt` (`CLIENT_ID`).
+   O login é feito no navegador (AppAuth, código + PKCE) e o token de renovação fica criptografado no aparelho.
+   Qualquer conta Google entra, não só as que estão no aparelho.
+5. Status do app:
    - **Em teste:** só contas listadas como usuários de teste entram (adicione cada conta) e a autorização expira em 7 dias.
    - **Em produção (sem verificação):** qualquer conta entra, com aviso de app não verificado e limite de 100 usuários.
      É a opção indicada para uso pessoal. Confirme as regras atuais no console.
