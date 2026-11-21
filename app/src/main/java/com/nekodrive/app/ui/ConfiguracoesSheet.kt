@@ -86,6 +86,7 @@ fun ConfiguracoesTela(vm: DriveViewModel, padding: PaddingValues, onContas: () -
     var limite by remember { mutableFloatStateOf(vm.limiteGb.toFloat()) }
     var estadoExportacao by remember { mutableStateOf<String?>(null) }
     var confirmarLimpeza by remember { mutableStateOf(false) }
+    var configGoogle by remember { mutableStateOf(false) }
     val contexto = LocalContext.current
     val escopo = rememberCoroutineScope()
     val usado = remember(vm.versaoCache) { vm.tamanhoCache() }
@@ -99,6 +100,8 @@ fun ConfiguracoesTela(vm: DriveViewModel, padding: PaddingValues, onContas: () -
             dismissButton = { TextButton(onClick = { confirmarLimpeza = false }) { Text("Cancelar") } },
         )
     }
+
+    if (configGoogle) ConfigurarGoogleDialog(onFechar = { configGoogle = false }, onSalvo = { configGoogle = false })
 
     run {
         Column(
@@ -211,6 +214,7 @@ fun ConfiguracoesTela(vm: DriveViewModel, padding: PaddingValues, onContas: () -
 
             Secao("Conta")
             TextButton(onClick = onContas) { Text("Gerenciar contas") }
+            TextButton(onClick = { configGoogle = true }) { Text("ID do cliente do Google") }
 
             Secao("Cache de vídeos e fotos")
             Text(
