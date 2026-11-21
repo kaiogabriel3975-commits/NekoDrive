@@ -47,7 +47,7 @@ class AuthManager(context: Context) {
     fun intentDeLogin(emailSugerido: String?): Intent {
         val config = AuthorizationServiceConfiguration(Uri.parse(URL_AUTORIZAR), Uri.parse(URL_TOKEN))
         val pedido = AuthorizationRequest.Builder(
-            config, OAuthConfig.CLIENT_ID, ResponseTypeValues.CODE, Uri.parse(OAuthConfig.REDIRECT_URI),
+            config, OAuthConfig.clientId(appContext), ResponseTypeValues.CODE, Uri.parse(OAuthConfig.REDIRECT_URI),
         )
             .setScope(ESCOPO_DRIVE)
             // com conta já conhecida o Google vai direto nela; sem conta, mostra a escolha
@@ -73,7 +73,7 @@ class AuthManager(context: Context) {
         }
         val codigo = resposta.authorizationCode ?: throw IOException("O Google não devolveu o código de acesso.")
         val corpo = FormBody.Builder()
-            .add("client_id", OAuthConfig.CLIENT_ID)
+            .add("client_id", resposta.request.clientId)
             .add("grant_type", "authorization_code")
             .add("code", codigo)
             .add("redirect_uri", resposta.request.redirectUri.toString())
@@ -123,7 +123,7 @@ class AuthManager(context: Context) {
 
     private suspend fun renovar(email: String, renovacao: String): String = withContext(Dispatchers.IO) {
         val corpo = FormBody.Builder()
-            .add("client_id", OAuthConfig.CLIENT_ID)
+            .add("client_id", OAuthConfig.clientId(appContext))
             .add("grant_type", "refresh_token")
             .add("refresh_token", renovacao)
             .build()
@@ -138,8 +138,8 @@ class AuthManager(context: Context) {
                 novo
             } else {
                 val codigo = runCatching { JSONObject(texto).optString("error") }.getOrDefault("")
-                if (codigo == "invalid_grant") {
-                    // revogado, expirado ou conta removida: só um login novo resolve
+                if (codigo == "invalid_grant" || codigo == "unauthorized_client") {
+                    // revogado, expirado, conta removida ou ID do cliente trocado: só um login novo resolve
                     cofre.apagar(email)
                     cache.remove(email)
                     throw NeedsConsentException()
