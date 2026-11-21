@@ -156,6 +156,7 @@ import com.nekodrive.app.data.drive.DriveFile
 import com.nekodrive.app.ui.Animacoes
 import com.nekodrive.app.ui.LocalVibrar
 import com.nekodrive.app.ui.LocalVidro
+import com.nekodrive.app.ui.NivelAparelho
 import com.nekodrive.app.ui.NomeUmaLinha
 import com.nekodrive.app.ui.Vidro
 import com.nekodrive.app.ui.abrirComOutroApp
@@ -1025,10 +1026,11 @@ private fun PaginaFoto(
                         .efeitoFechar(progresso, encolher, inclinar)
                         .clip(if (compartilhar) RoundedCornerShape(raio) else RectangleShape),
                 ) {
+                    val ladoFoto = remember(ctx) { NivelAparelho.atual(ctx).ladoFoto }
                     val original = ImageRequest.Builder(ctx)
                         .data(arquivoLocal ?: "https://www.googleapis.com/drive/v3/files/${f.id}?alt=media")
                         .apply { if (token != null) addHeader("Authorization", "Bearer $token") }
-                        .size(2400, 2400)
+                        .size(ladoFoto, ladoFoto) // qualidade da foto pelo nível do aparelho (NivelAparelho)
                         .emLoop() // GIFs e imagens animadas repetem enquanto a tela estiver aberta
                         .crossfade(!Animacoes.sem)
                         .build()
