@@ -1,208 +1,127 @@
-[Uploading README.md…]()
-[Uploading README.md…]()
-# nekodrive
+# NekoDrive
 
-App Android (Kotlin + Jetpack Compose) para ver vídeos e fotos do Google Drive.
-Visualizador e player de fotos e vídeos do Google Drive, organizado por pastas. O histórico de cada etapa está nas seções abaixo (as seções antigas descrevem o estado daquela etapa).
+App Android (Kotlin + Jetpack Compose) para ver vídeos e fotos do seu Google Drive, organizado por pastas.
+Roda só no seu aparelho: não existe servidor do app, e o acesso ao Drive usa a sua própria conta e o seu próprio
+projeto no Google Cloud.
+
+## O que o app faz
+
+- **Navegação:** pastas do Meu Drive em grade ou lista, ordenação por nome, data ou tamanho, busca por nome em todo o Drive e várias contas Google.
+- **Fotos:** visualizador em tela cheia com zoom por pinça e toque duplo, giro, informações do arquivo, GIFs e imagens animadas. A resolução da foto se ajusta ao nível do aparelho (entrada, intermediário ou topo).
+- **Vídeos:** player em tela cheia com legendas (embutidas e arquivos `.srt` ou `.vtt` ao lado do vídeo), velocidade, escolha de resolução, Picture-in-Picture, retomar de onde parou e Chromecast.
+- **Cache e offline:** o que você assiste e baixa fica em um cache único, com limite ajustável (padrão 5 GB). Itens salvos abrem sem internet.
+- **Organização:** favoritos (só no app, separados por conta), lixeira do Drive com restaurar e excluir definitivamente, mover, copiar, renomear, criar pasta, enviar arquivos, compartilhar e abrir em outro app ou player.
+- **Miniaturas:** GIFs grandes ganham uma versão leve em cache depois da primeira vez, para gastar menos dados e memória.
+
+Requer **Android 12 ou mais novo** (minSdk 31).
+
+## Como instalar
+
+1. **Baixar o APK** das *Releases* deste repositório, quando houver um publicado. Ele é assinado pelo autor, então o SHA-1 que o app mostra na tela de configuração é sempre o mesmo.
+2. **Ou compilar o seu**, pelo GitHub Actions (seção mais abaixo). Nesse caso o SHA-1 é o da sua própria chave.
+
+Em qualquer caso, antes de entrar no Drive você precisa do passo seguinte.
+
+## Configurar o login (uma vez)
+
+O Google exige que todo app que acessa o Drive use um **cliente OAuth** criado dentro de um projeto do Google Cloud.
+Aqui cada pessoa cria o seu (é grátis), cola o ID no app e pronto. Assim não há limite de usuários do autor e ninguém
+além de você tem acesso ao seu projeto. Os nomes dos menus do Google mudam de vez em quando.
+
+1. Em [console.cloud.google.com](https://console.cloud.google.com), crie um projeto.
+2. Em **APIs e serviços > Biblioteca**, ative a **Google Drive API**.
+3. Em **Google Auth Platform** (tela de consentimento OAuth), configure o app:
+   - Público: **Externo**.
+   - Escopo: `https://www.googleapis.com/auth/drive`.
+   - Status: **publique como "Em produção"**. Em "Em teste", só entram as contas listadas como usuários de teste e a autorização expira em 7 dias.
+4. Em **Clientes**, crie um cliente do tipo **Android**:
+   - Nome do pacote: `com.nekodrive.app`
+   - SHA-1: o que o app mostra (veja o passo 5) ou o da sua keystore.
+5. Abra o cliente criado, vá em **Configurações avançadas** e ligue **Ativar esquema de URI personalizado**. Sem isso o Google responde "Erro 400: invalid_request". A mudança pode levar alguns minutos para valer.
+6. Copie o **ID do cliente** (termina em `.apps.googleusercontent.com`).
+7. No app, toque em entrar (ou vá em **Configurações > Conta > ID do cliente do Google**). A tela mostra o pacote e o SHA-1 do app, com botão de copiar, e tem o campo para colar o ID.
+
+Na primeira vez o Google mostra "o app não foi verificado". É o seu próprio projeto e só você o usa:
+toque em **Avançado** e continue. O limite de 100 usuários do modo sem verificação não atrapalha, porque são só as suas contas.
+
+### Como o login funciona
+
+- O login abre uma aba do navegador (AppAuth, código de autorização com PKCE). Qualquer conta Google serve, mesmo uma que não esteja no aparelho.
+- O app guarda um **token de renovação** criptografado (AES-GCM, chave no Android Keystore, fora do backup). Com ele o acesso se renova sozinho, sem abrir o navegador. Se o Google invalidar o acesso, o app reabre o login na mesma conta.
+- Remover uma conta no app apaga os dados dela do aparelho. Para revogar o acesso também no Google, use [myaccount.google.com/permissions](https://myaccount.google.com/permissions).
+- Para um build seu que já nasça configurado, ponha o ID em `CLIENT_ID_PADRAO` em
+  `app/src/main/java/com/nekodrive/app/data/auth/OAuthConfig.kt`. Em repositório público, deixe vazio.
+
+### Se der erro no login
+
+| Mensagem | O que fazer |
+|---|---|
+| Erro 400: invalid_request, "Custom URI scheme is not enabled" | Passo 5: ligar o esquema de URI personalizado no cliente Android e esperar alguns minutos |
+| Acesso bloqueado, app em teste | Publicar como "Em produção" ou adicionar a conta como usuário de teste |
+| Volta a pedir login a cada 7 dias | O projeto ainda está em "Em teste" |
+| Erro de desenvolvedor ou cliente inválido | Conferir o pacote, o SHA-1 e o ID colado; o SHA-1 muda se o APK for assinado por outra chave |
+| Mudou de ID do cliente | As contas pedem login de novo, é esperado |
 
 ## Compilar pelo GitHub Actions
 
-1. Crie um repositório **privado** e envie o conteúdo desta pasta (branch `main`).
-2. O workflow `Build APK` roda a cada push e também manualmente (aba Actions).
-3. O APK fica em **Artifacts > nekodrive-apk** ao fim do build.
+1. Crie um repositório **privado** seu com o conteúdo deste projeto (branch `main`). Ele precisa ser privado porque o
+   workflow que gera a chave entrega um arquivo com a senha.
+2. O workflow **Build APK** roda a cada push e também manualmente (aba Actions). O APK fica em **Artifacts > nekodrive-apk**.
+3. Sem os secrets abaixo, o APK sai assinado com a chave de debug, que **muda a cada build**. Serve para ver o visual, mas
+   o login do Google não funciona direito porque o SHA-1 muda. Para usar de verdade, crie uma chave fixa.
 
-Sem os secrets abaixo, o APK sai assinado com a chave de debug. Funciona para testar o visual,
-mas o login do Google (etapa 2) exige a chave fixa.
+### Chave de assinatura (fazer uma vez, guardar bem)
 
-## Chave de assinatura (fazer uma vez, guardar bem)
+**Pelo GitHub, sem PC:**
+
+1. Em **Actions > Gerar keystore > Run workflow** (o arquivo precisa estar na branch `main`).
+2. Ao terminar, a execução mostra o **SHA-1**. É ele que vai no cliente Android do Google Cloud.
+3. Baixe o artefato **keystore-nekodrive** (fica 3 dias) e **guarde uma cópia**.
+4. Crie os 4 secrets em Settings > Secrets and variables > Actions, com os valores de `credenciais.txt`:
+   `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`.
+
+Atalho opcional: um token fino do GitHub, só para este repositório, com permissão **Secrets: Read and write**, salvo como
+secret `GH_PAT`. Assim o workflow grava os 4 secrets sozinho. O workflow se recusa a rodar se `KEYSTORE_BASE64` já existir,
+para você não trocar a chave por acidente (trocar obriga a desinstalar o app e perde favoritos e cache locais).
+
+**No computador:**
 
     keytool -genkeypair -v -keystore nekodrive.jks -alias nekodrive \
       -keyalg RSA -keysize 2048 -validity 10000
     base64 -w0 nekodrive.jks        # copie a saída para o secret KEYSTORE_BASE64
-
-Em Settings > Secrets and variables > Actions, crie:
-`KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` (nekodrive) e `KEY_PASSWORD`.
-
-SHA-1 para o cliente OAuth do Google Cloud (etapa 2):
-
-    keytool -list -v -keystore nekodrive.jks -alias nekodrive
+    keytool -list -v -keystore nekodrive.jks -alias nekodrive    # mostra o SHA-1
 
 Nunca envie o `.jks` ao repositório (já está no `.gitignore`).
 
-## Estado da etapa 1 (histórico)
+## Uso
 
-- minSdk 31 (Android 12), pacote `com.nekodrive.app`
-- Conta e configurações já têm ação (etapas 2 e 6) e o blur real (Haze) entrou na etapa 9
+- **Pastas:** toque abre; segurar seleciona vários itens (baixar, favoritar, mover para a lixeira). Puxar a lista para baixo atualiza.
+- **Foto:** deslizar troca de foto, pinça ou toque duplo dá zoom, arrastar para baixo fecha.
+- **Vídeo:** toque mostra ou esconde os controles, toque duplo nas laterais pula 5 a 30 s (ajustável), segurar acelera, arrastar para baixo fecha.
+- **Download:** selecione e use o botão de baixar. Arquivos que não são mídia vão para a pasta Downloads do Android. Baixar de novo retoma de onde parou.
+- **Chromecast:** celular e TV na mesma rede Wi-Fi. A TV busca o vídeo em um servidor local no celular, que repassa o conteúdo do Drive com o seu token. O servidor fecha sozinho quando não é mais usado.
+- **Configurações:** tema, grade ou lista, blur, animações, resolução do vídeo no Wi-Fi e nos dados, limite do cache, exportar logs de diagnóstico.
 
-## Etapa 2: login e listagem do Drive
+## Limitações conhecidas
 
-Para o login funcionar, configure o Google Cloud (uma vez):
+- Formatos que o ExoPlayer não toca (como AVI) tentam a **versão convertida** do Drive. Ela usa um endereço **não oficial** (`get_video_info`) que pode mudar ou parar de funcionar, e não vale para legendas laterais.
+- O Android pode limpar o cache do app quando falta espaço.
+- O Google pode mudar as regras do OAuth e do consentimento. Confira o estado atual no console.
 
-1. Crie um projeto em console.cloud.google.com e ative a **Google Drive API**.
-2. Em **Google Auth Platform** (tela de consentimento): tipo Externo, adicione o escopo
-   `https://www.googleapis.com/auth/drive`.
-3. Em **Clientes**, abra (ou crie) o cliente **Android** com o pacote `com.nekodrive.app` e o **SHA-1 da sua keystore fixa**
-   (veja o comando acima). Em **Configurações avançadas** do cliente, ligue **Ativar esquema de URI personalizado**
-   (o login por navegador volta ao app por `com.nekodrive.app:/oauth2redirect`). Copie o **ID do cliente**.
-4. Abra o app e cole o ID do cliente em **Configurações > Conta > ID do cliente do Google** (o app também abre essa
-   tela sozinho na primeira vez que você tenta entrar; ela mostra o pacote e o SHA-1 deste app para copiar).
-   Para um build seu que já nasça configurado, ponha o ID em `CLIENT_ID_PADRAO`, em
-   `app/src/main/java/com/nekodrive/app/data/auth/OAuthConfig.kt` (em repositório público, deixe vazio).
-   O login é feito no navegador (AppAuth, código + PKCE) e o token de renovação fica criptografado no aparelho.
-   Qualquer conta Google entra, não só as que estão no aparelho.
-5. Status do app:
-   - **Em teste:** só contas listadas como usuários de teste entram (adicione cada conta) e a autorização expira em 7 dias.
-   - **Em produção (sem verificação):** qualquer conta entra, com aviso de app não verificado e limite de 100 usuários.
-     É a opção indicada para uso pessoal. Confirme as regras atuais no console.
+## Para quem desenvolve
 
-Estado atual da etapa 2:
-- Várias contas: botão de contas no cabeçalho (trocar, adicionar, remover)
-- Pastas e arquivos do Meu Drive em grade com miniaturas, navegação por pastas e botão voltar
-- Foto e vídeo abrem no visualizador e no player (etapas 4 e 5)
-- Sem Hilt: usei injeção manual simples (AppContainer)
+- Kotlin + Jetpack Compose, injeção manual simples (`AppContainer`), minSdk 31, targetSdk 35 (a permissão de rede local do Chromecast no Android 17 vem implícita; se o targetSdk subir para 37 ou mais, será preciso pedi-la).
+- Principais pastas em `app/src/main/java/com/nekodrive/app`: `ui/drive` (tela principal e `DriveViewModel`), `ui/galeria` (fotos e vídeos), `ui/player` (Chromecast), `data/drive` (API do Drive via OkHttp), `data/cache` (cache de mídia, servidor local e GIF leve), `data/auth` (login e tokens).
+- Blur com a biblioteca Haze 1.5.4 (ligado também no Android 12). Haze 2.x e 1.7 exigem Kotlin e Compose mais novos que os do projeto.
+- O ambiente de desenvolvimento do autor não compila localmente: quem compila é o GitHub Actions (passo "Compilar").
 
-## Gerar a keystore pelo GitHub (sem PC)
+## Roteiro de teste
 
-1. Em **Actions > Gerar keystore > Run workflow** (o arquivo precisa estar na branch `main`).
-2. Ao terminar, abra a execução: o resumo mostra o **SHA-1** (cole no cliente OAuth do Google Cloud).
-3. Baixe o artefato **keystore-nekodrive** (fica 3 dias) e **guarde uma cópia**. Ele tem a keystore e as senhas.
-4. Crie os 4 secrets do build com os valores de `credenciais.txt`:
-   `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`.
-
-Atalho opcional: crie um token fino em GitHub > Settings > Developer settings, só para este repositório, com permissão
-**Secrets: Read and write**, e salve como secret `GH_PAT`. Assim o workflow grava os 4 secrets sozinho.
-
-O workflow se recusa a rodar se `KEYSTORE_BASE64` já existir, para você não trocar a chave por acidente.
-
-## Etapa 3: navegação
-
-- Alternar grade/lista, ordenar por nome, data ou tamanho (toque de novo para inverter) e busca por nome em todo o Drive
-- A pasta se expande ao tocar (transição de elemento compartilhado); voltar restaura a lista na hora
-- Toque longo seleciona vários itens; por enquanto a ação em lote é mover para a lixeira (com confirmação)
-- Favoritar e baixar entram na barra de seleção nas etapas 6 e 7
-
-## Etapa 4: visualizador de fotos
-
-- Tocar numa foto abre o visualizador em tela cheia, com a foto expandindo a partir da miniatura
-- Deslizar para os lados troca de foto (mola ao soltar); pinça dá zoom; arrastar para baixo fecha
-- Toque na foto mostra/esconde as barras. Botões: girar (só visual), copiar a imagem e detalhes
-- Detalhes mostram todos os campos que a API do Drive devolve
-- A rolagem de cada pasta agora é guardada (ao voltar de uma pasta ou fechar uma foto)
-
-## Etapa 5: player de vídeo
-
-- Tocar num vídeo abre o player em tela cheia (mesma animação de expansão das fotos)
-- Streaming direto do Drive com o token da conta (renovado durante a reprodução)
-- Controles: play/pause, ±10 s, barra de posição, velocidade (0,5x a 2x), legendas, Picture-in-Picture e girar a tela
-- Gestos: toque mostra/esconde controles, toque duplo avança/volta 10 s, segurar acelera 2x, pinça dá zoom, arrastar para baixo fecha
-- Legendas: faixas embutidas e arquivos .srt/.vtt com o mesmo nome na mesma pasta
-- Retoma de onde parou; passou de 90% vira "assistido" (usado na etapa 6, cache e limpeza)
-- Formatos que o ExoPlayer não toca (ex.: AVI) mostram erro; a versão convertida do Drive entra na etapa 8
-- Chromecast: etapa 8
-
-## Etapa 6: cache, downloads e configurações
-
-- Um cache único (pasta de cache do app) guarda tudo que é assistido e tudo que é baixado, para vídeos e fotos
-- Baixar: toque longo para selecionar e use o botão de baixar (só arquivos, não pastas); no visualizador de fotos há um botão de baixar
-- Itens salvos mostram um ícone de download concluído; vídeos assistidos (90% ou mais) mostram um ícone de visto; o download mostra o progresso
-- Limite de GB ajustável em Configurações (padrão 5 GB). Ao passar do limite, o que foi usado há mais tempo é apagado primeiro
-- Vídeos e fotos já salvos abrem sem internet
-- Configurações: tela inicial (grade ou lista), contas, limite e limpar cache
-- O Android pode limpar o cache do app quando falta espaço
-- Downloads continuam com o app em segundo plano enquanto o Android mantiver o processo; baixar de novo retoma de onde parou
-
-## Etapa 7: favoritos e lixeira
-
-- Favoritar: botão de estrela na seleção em lote, no visualizador de fotos e no player. Só arquivos (não pastas)
-- Favoritos ficam só no app (não mexem na estrela do Drive), separados por conta; itens favoritos mostram uma estrela na miniatura
-- Aba Favoritos: grade ou lista; abre fotos e vídeos; avisa quando um favorito não existe mais no Drive e permite limpar a lista
-- Lixeira: lista os itens da lixeira do Drive; toque longo seleciona; restaurar, excluir definitivamente e esvaziar (com duas confirmações)
-- Mover para a lixeira (aba Drive ou Favoritos) tira o item dos favoritos
-- Restaurar atualiza a aba Drive
-
-## Etapa 8: Chromecast e versão convertida
-
-- Ícone de Cast na barra do player: escolhe o dispositivo da rede; o vídeo passa a tocar na TV e o celular vira controle (pausar, ±10 s, barra, parar). Parar continua o vídeo no celular de onde estava na TV
-- A TV busca o vídeo em um servidor local no celular, que repassa o conteúdo do Drive com o token da conta. Celular e TV precisam estar na mesma rede Wi-Fi
-- Formatos que o receptor padrão do Chromecast não toca (por exemplo MKV) tentam a versão convertida do Drive
-- Versão convertida: se o player local não tocar o arquivo (AVI, codecs sem suporte), o app tenta sozinho a versão mp4 que o Drive gera. Usa um endereço NÃO oficial do Drive (get_video_info), que pode mudar ou parar de funcionar; legendas laterais não valem nesse modo
-- Android 17: o app mira o SDK 35, então a permissão de rede local (ACCESS_LOCAL_NETWORK) é concedida implicitamente. Se um dia o targetSdk subir para 37 ou mais, será preciso pedi-la
-
-## Etapa 9: polimento
-
-- Vidro com desfoque de verdade (biblioteca Haze 1.5.4) na barra superior, na faixa de ferramentas de cada aba e na barra inferior: as listas rolam por baixo delas
-- O desfoque usa a cor do tema (Material You) com transparência
-- Vibração leve ao selecionar com toque longo
-- No Android 12 exato (não 12L), o Haze 1.5 deixa o desfoque desligado por padrão e mostra só a cor translúcida; do Android 12L em diante (inclusive o 17) o desfoque funciona
-- Haze 2.x e 1.7 exigem Kotlin e Compose mais novos que os do projeto; atualizar o conjunto todo fica como tarefa futura
-
-## Roteiro de teste final (Android 12 e Android 17)
-
-1. Entrar com duas contas e trocar entre elas
-2. Abrir pastas (animação de expansão), voltar, buscar, ordenar, alternar grade e lista
-3. Foto: abrir, deslizar entre fotos, zoom com pinça, girar, copiar (colar em outro app), detalhes, fechar puxando para baixo
-4. Vídeo: tocar, ±10 s, segurar para acelerar, legendas laterais, Picture-in-Picture, retomar de onde parou
-5. Baixar um vídeo, desligar a internet e abrir de novo; mudar o limite de GB e limpar o cache
-6. Favoritar, ver na aba Favoritos; mover para a lixeira, restaurar, excluir e esvaziar
-7. Chromecast na mesma rede Wi-Fi; formato que o player não toca (versão convertida)
-
-## Atualização de UI (documento de especificação)
-
-- ActionBar nativa removida (tema) e edge-to-edge sem a faixa escura nas barras do sistema
-- Cabeçalho com gradiente de blur (Haze, desfoque progressivo); no paisagem, cartão flutuante ao lado da NavigationRail
-- Toolbar flutuante (pílula com vidro, some ao rolar para baixo) no retrato; NavigationRail no paisagem
-- Botão Drive, quando já está na aba, volta ao início (raiz e topo da lista); breadcrumb removido
-- Animação de pasta parte do card cinza da miniatura, com a mesma duração (500 ms) e curva suave estilo iOS
-- Galeria única: fotos e vídeos da pasta na mesma sequência (deslize horizontal), com dissolução com blur entre tipos
-- Fotos: nome no topo (uma linha, marquee a 24 FPS), pílula inferior com girar, copiar, baixar, favoritar, informações e excluir; sem botão de copiar em GIF
-- GIFs e imagens animadas (Coil com decodificador de imagens animadas)
-- Fechar puxando para baixo: a imagem encolhe em direção ao centro, sem acompanhar o dedo por inteiro, com perspectiva 3D (topo para trás, base como referência)
-- Botões somem com fade + blur (390 ms: 90 ms originais + 300 ms)
-- Vídeo: sem botões de ±10 s; toque duplo ±10 s, segurar 2x, mensagens de 500 ms no topo; pausa à esquerda e giro à direita da barra de progresso em círculos de vidro; menu de três pontos (velocidade, transmitir, legendas, informações); pílula com favoritar, baixar, PiP e excluir; barras do sistema só se escondem depois de carregar e acompanham os controles
-- Menus de informações só mostram o que o Drive confirma (data de criação, envio, nome, local, tamanho, resolução, formato, dispositivo/câmera quando houver EXIF, conta proprietária, link); FPS vem do player
-- Arquivos que o app não abre oferecem abrir com outro app (também no erro do player)
-- Ícones arredondados (Material Icons Rounded)
-
-## Ajustes de comportamento (segunda rodada de UI)
-
-- Botão Drive: volta à raiz pasta por pasta, com a animação normal de fechar a cada passo
-- Só a página ativa da galeria é elemento compartilhado (sem miniaturas "duplas" ao abrir); a mídia expande opaca, sem fade
-- Fechamento integrado (gesto, botão de voltar ou círculo): encolher suave + perspectiva sutil (aceleração) + voo até a miniatura ao mesmo tempo
-- Cantos da miniatura mudam aos poucos para cantos retos (galeria e tela da pasta)
-- Pasta: o card (miniatura + legenda, mesma cor) vira a tela da pasta, com o mesmo formato e a mesma cor durante a animação
-- Botões de busca, ordem e grade/lista, voltar e seleção em círculos/pílulas de vidro (sem barra de fundo)
-- Todos os blurs com +35% de saturação; menus do player com blur (feitos na própria composição)
-- Cor mais frequente da mídia tinge o card e o texto da grade, aos poucos, quando a miniatura carrega
-- GIFs e imagens animadas em loop (miniaturas em baixa resolução, sem reduzir os quadros)
-- Toque duplo: zoom nas fotos; no vídeo, laterais ±10 s e centro aplica/reduz o zoom
-- Giro de foto com zoom out suave e ajuste exato à proporção da imagem
-- Bounce e atualizar puxando a lista (quadrado de vidro com mola); grade e lista trocam com deslize suave
-- Favoritar pastas (abrem no Drive pelo Favoritos); compartilhar; abrir em outro player (streaming local) ou outro app
-- Arquivos que não são mídia baixam para a pasta Downloads do Android
-- Player: resolução original e versões convertidas disponíveis; padrão 1080p no Wi-Fi e 540p (ou a mais próxima abaixo) em dados, com ajuste automático pela rede enquanto você não escolher
-
-## Terceira rodada (após o teste da segunda)
-
-- A segunda rodada compilou e foi testada no aparelho (Samsung, navegação por botões): a faixa preta da navegação não aparece mais
-- Menu de ordenação com blur (mesmo componente dos menus do player), no lugar do menu opaco do sistema
-- Cor dominante também na lista (linha em cartão arredondado) e nos GIFs (cor do primeiro quadro)
-- Card da pasta: o ícone e a legenda acompanham a borda do card enquanto ele se expande e voltam com ela ao fechar; o conteúdo da pasta entra um pouco depois
-- Grade e lista: o texto some rápido, os itens deslizam e mudam de tamanho com mola, e o texto volta
-- Puxar para baixo no topo atualiza (confirmado)
-
-## Quarta rodada (animação de fotos e vídeos)
-
-- Abertura e fechamento: a mídia cresce da miniatura quadrada (recorte central) até o formato original, sem a miniatura por cima
-- Fechamento: a mídia volta ao lugar da miniatura, fica 0,2 s parada e então é trocada por ela; a inclinação sobe e assenta junto com a volta e não é mais cortada
-- A duração da volta é 0,35 s por botão e diminui conforme a distância e a velocidade do deslize (mínimo de cerca de 0,18 s)
-- Encolher ao arrastar usa mola no estilo Apple (amortecimento 0,8); o deslize vertical segue o dedo sem elasticidade
-- Vídeo: pausa ao começar a fechar; durante a volta só o vídeo aparece e ele cobre a moldura (em pé encosta nas laterais, deitado no topo e na base)
-- Enquanto a mídia fecha, voltar de pasta e toques nos itens são ignorados
-
-## Quinta rodada (resoluções, troca grade/lista e blur no Android 12)
-
-- Resoluções do player: 4K, 2K, 1080p, 720p, 540p, 480p, 360p, 240p e 144p, só as que o vídeo comporta (pelo lado menor da imagem, então vídeo em pé também funciona). Cada degrau usa a menor fonte igual ou maior (original ou versão convertida do Drive) e o player reduz a imagem para o degrau quando a fonte é maior (dependência media3-effect). A banda gasta é a da fonte, não a do degrau
-- Padrão: 1080p no Wi-Fi e 540p nos dados móveis, com ajuste automático pela rede enquanto o usuário não escolher
-- Troca grade/lista: cada item parte do tamanho que tinha e vai para o novo com mola (só desenho, sem alterar o layout); o texto volta em fade depois do movimento
-- Blur ligado também no Android 12 (o Haze o desliga por padrão nessa versão)
-
+1. Entrar com duas contas (uma delas que não esteja no sistema Android) e trocar entre elas; fechar e abrir o app mais de 1 hora depois e conferir que segue logado.
+2. Abrir pastas, voltar, buscar, ordenar, alternar grade e lista.
+3. Foto: deslizar, zoom, girar, copiar, detalhes, fechar puxando para baixo.
+4. Vídeo: tocar, pular, segurar para acelerar, legendas, Picture-in-Picture, retomar de onde parou.
+5. Baixar um vídeo, desligar a internet e abrir de novo; mudar o limite de GB e limpar o cache.
+6. Favoritar, ver na aba Favoritos; mover para a lixeira, restaurar, excluir e esvaziar.
+7. Pasta com GIFs grandes: rolar, fechar e abrir de novo (a segunda vez deve carregar mais leve).
+8. Chromecast na mesma rede Wi-Fi e um formato que o player não toca (versão convertida).
