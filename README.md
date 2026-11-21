@@ -44,7 +44,10 @@ Para o login funcionar, configure o Google Cloud (uma vez):
 3. Em **Clientes**, abra (ou crie) o cliente **Android** com o pacote `com.nekodrive.app` e o **SHA-1 da sua keystore fixa**
    (veja o comando acima). Em **Configurações avançadas** do cliente, ligue **Ativar esquema de URI personalizado**
    (o login por navegador volta ao app por `com.nekodrive.app:/oauth2redirect`). Copie o **ID do cliente**.
-4. Cole o ID do cliente em `app/src/main/java/com/nekodrive/app/data/auth/OAuthConfig.kt` (`CLIENT_ID`).
+4. Abra o app e cole o ID do cliente em **Configurações > Conta > ID do cliente do Google** (o app também abre essa
+   tela sozinho na primeira vez que você tenta entrar; ela mostra o pacote e o SHA-1 deste app para copiar).
+   Para um build seu que já nasça configurado, ponha o ID em `CLIENT_ID_PADRAO`, em
+   `app/src/main/java/com/nekodrive/app/data/auth/OAuthConfig.kt` (em repositório público, deixe vazio).
    O login é feito no navegador (AppAuth, código + PKCE) e o token de renovação fica criptografado no aparelho.
    Qualquer conta Google entra, não só as que estão no aparelho.
 5. Status do app:
