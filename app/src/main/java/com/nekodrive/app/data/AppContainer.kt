@@ -27,5 +27,8 @@ class AppContainer(context: Context) {
     /** Downloads continuam enquanto o processo do app estiver vivo. */
     val escopo = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val semaforo = Semaphore(2)
+
+    /** Guarda no Drive (pasta "etc") o que só o app enxerga: ajustes, favoritos e capas. */
+    val sync = ConfigSync(context, drive, accounts, favoritos, capas, prefs, escopo)
     val midia by lazy { MidiaCache(context, auth, prefs.limiteGb) }
 }
