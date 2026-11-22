@@ -10,7 +10,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
+import com.nekodrive.app.data.Rede
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
@@ -28,6 +28,8 @@ data class DriveFile(
     val thumbnailLink: String?,
     /** Qualquer pessoa com o link consegue abrir (mídias privadas ficam sem indicador). */
     val publico: Boolean = false,
+    /** md5 do conteúdo (só arquivos binários): muda quando o arquivo é editado, e não ao renomear. */
+    val md5: String? = null,
 ) {
     val isFolder get() = mimeType == "application/vnd.google-apps.folder"
     val isImage get() = mimeType.startsWith("image/")
@@ -44,7 +46,7 @@ class DriveHttpException(val code: Int, mensagem: String) : IOException(mensagem
 class ArquivoDePasta(val arquivo: DriveFile, val caminho: String)
 
 class DriveRepository(private val auth: AuthManager) {
-    private val http = OkHttpClient()
+    private val http = Rede.base
     private val api = "https://www.googleapis.com/drive/v3/"
 
     /** Executa com o token da conta; se o Drive responder 401, renova o token e tenta de novo. */
@@ -57,19 +59,38 @@ class DriveRepository(private val auth: AuthManager) {
             }
         }
 
-    /** [consulta] é o filtro `q` do Drive; [ordem] é o `orderBy` (ex.: "folder,name_natural"). */
-    suspend fun list(email: String, consulta: String, ordem: String, pageToken: String?): DrivePage =
+    /**
+     * [consulta] é o filtro `q` do Drive; [ordem] é o `orderBy` (ex.: "folder,name_natural").
+     * Com [soExplicitos] (lixeira) some o que só está lá por estar dentro de uma pasta apagada, como no app do Drive.
+     */
+    suspend fun list(
+        email: String, consulta: String, ordem: String, pageToken: String?, soExplicitos: Boolean = false,
+    ): DrivePage {
+        var pagina = listarPagina(email, consulta, ordem, pageToken, soExplicitos)
+        var tentativas = 0
+        // numa lixeira cheia de subitens uma página inteira pode sair vazia: segue para a próxima
+        while (soExplicitos && pagina.files.isEmpty() && pagina.nextPageToken != null && tentativas++ < 10) {
+            pagina = listarPagina(email, consulta, ordem, pagina.nextPageToken, soExplicitos)
+        }
+        return pagina
+    }
+
+    private suspend fun listarPagina(
+        email: String, consulta: String, ordem: String, pageToken: String?, soExplicitos: Boolean,
+    ): DrivePage =
         comToken(email) { token ->
             val url = (api + "files").toHttpUrl().newBuilder()
                 .addQueryParameter("q", consulta)
-                .addQueryParameter("fields", "nextPageToken,files(id,name,mimeType,size,modifiedTime,thumbnailLink,permissionIds)")
+                .addQueryParameter("fields", "nextPageToken,files(id,name,mimeType,size,modifiedTime,thumbnailLink,permissionIds,md5Checksum,explicitlyTrashed)")
                 .addQueryParameter("orderBy", ordem)
                 .addQueryParameter("pageSize", "100")
                 .apply { if (pageToken != null) addQueryParameter("pageToken", pageToken) }
                 .build()
             val json = JSONObject(get(token, url))
             val arr = json.optJSONArray("files")
-            val files = (0 until (arr?.length() ?: 0)).map { i -> arr!!.getJSONObject(i).paraArquivo() }
+            val files = (0 until (arr?.length() ?: 0)).map { i -> arr!!.getJSONObject(i) }
+                .filter { !soExplicitos || it.optBoolean("explicitlyTrashed", true) }
+                .map { it.paraArquivo() }
             DrivePage(files, json.optString("nextPageToken").ifEmpty { null })
         }
 
@@ -87,6 +108,7 @@ class DriveRepository(private val auth: AuthManager) {
             modifiedTime = optString("modifiedTime").ifEmpty { null },
             thumbnailLink = optString("thumbnailLink").ifEmpty { null },
             publico = publico,
+            md5 = optString("md5Checksum").ifEmpty { null },
         )
     }
 
@@ -300,7 +322,7 @@ class DriveRepository(private val auth: AuthManager) {
     /** Metadados atuais de um arquivo; null se não existir mais ou se estiver na lixeira. */
     suspend fun arquivo(email: String, id: String): DriveFile? = comToken(email) { token ->
         val url = (api + "files/" + id).toHttpUrl().newBuilder()
-            .addQueryParameter("fields", "id,name,mimeType,size,modifiedTime,thumbnailLink,trashed,permissionIds")
+            .addQueryParameter("fields", "id,name,mimeType,size,modifiedTime,thumbnailLink,trashed,permissionIds,md5Checksum")
             .build()
         try {
             val o = JSONObject(get(token, url))
