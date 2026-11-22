@@ -3,6 +3,7 @@ package com.nekodrive.app.data.auth
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import com.nekodrive.app.data.Rede
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
@@ -16,7 +17,6 @@ import net.openid.appauth.AuthorizationService
 import net.openid.appauth.AuthorizationServiceConfiguration
 import net.openid.appauth.ResponseTypeValues
 import okhttp3.FormBody
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 
@@ -33,7 +33,7 @@ class LoginConcluido(val accessToken: String, val renovacao: String?, val valido
 class AuthManager(context: Context) {
     private val appContext = context.applicationContext
     private val cofre = CofreTokens(appContext)
-    private val http = OkHttpClient()
+    private val http = Rede.base
 
     // Acessado por várias threads (IO, OkHttp, carregadores do player).
     private val cache = ConcurrentHashMap<String, Pair<String, Long>>()
