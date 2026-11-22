@@ -1,5 +1,6 @@
 package com.nekodrive.app.ui.drive
 
+import com.nekodrive.app.data.tr
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
@@ -46,15 +47,14 @@ fun ContasSheet(
     paraRemover?.let { conta ->
         AlertDialog(
             onDismissRequest = { paraRemover = null },
-            title = { Text("Remover a conta?") },
+            title = { Text(tr("Remover a conta?")) },
             text = {
                 Text(
-                    "${conta.email} sai do app, junto com os favoritos, as capas, o ponto em que você parou nos vídeos " +
-                        "e os arquivos guardados neste aparelho. Nada é apagado do Drive.",
+                    tr("%s sai do app, junto com os favoritos, as capas, o ponto em que você parou nos vídeos e os arquivos guardados neste aparelho. Nada é apagado do Drive.", conta.email),
                 )
             },
-            confirmButton = { TextButton(onClick = { paraRemover = null; onRemover(conta) }) { Text("Remover") } },
-            dismissButton = { TextButton(onClick = { paraRemover = null }) { Text("Cancelar") } },
+            confirmButton = { TextButton(onClick = { paraRemover = null; onRemover(conta) }) { Text(tr("Remover")) } },
+            dismissButton = { TextButton(onClick = { paraRemover = null }) { Text(tr("Cancelar")) } },
         )
     }
     ModalBottomSheet(onDismissRequest = onFechar) {
@@ -62,7 +62,7 @@ fun ContasSheet(
             contas.forEach { conta ->
                 ListItem(
                     headlineContent = { Text(conta.name ?: conta.email) },
-                    supportingContent = { Text(if (conta.email == atual?.email) "${conta.email} (em uso)" else conta.email) },
+                    supportingContent = { Text(if (conta.email == atual?.email) tr("%s (em uso)", conta.email) else conta.email) },
                     leadingContent = {
                         if (conta.photoUrl != null) {
                             AsyncImage(conta.photoUrl, null, Modifier.size(40.dp).clip(CircleShape), contentScale = ContentScale.Crop)
@@ -72,7 +72,7 @@ fun ContasSheet(
                     },
                     trailingContent = {
                         IconButton(onClick = { paraRemover = conta }) {
-                            Icon(Icons.Rounded.Close, contentDescription = "Remover conta")
+                            Icon(Icons.Rounded.Close, contentDescription = tr("Remover conta"))
                         }
                     },
                     colors = transparente,
@@ -80,7 +80,7 @@ fun ContasSheet(
                 )
             }
             ListItem(
-                headlineContent = { Text("Adicionar conta") },
+                headlineContent = { Text(tr("Adicionar conta")) },
                 leadingContent = { Icon(Icons.Rounded.PersonAdd, null) },
                 colors = transparente,
                 modifier = Modifier.clickable { onAdicionar(); onFechar() },
