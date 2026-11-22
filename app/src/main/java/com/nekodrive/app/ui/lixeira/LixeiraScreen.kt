@@ -1,5 +1,6 @@
 package com.nekodrive.app.ui.lixeira
 
+import com.nekodrive.app.data.tr
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
@@ -103,7 +104,7 @@ fun LixeiraScreen(
                 CircularProgressIndicator(Modifier.align(Alignment.Center))
             } else if (!vm.carregandoLixeira && vm.lixeira.isEmpty() && vm.erroLixeira == null) {
                 Text(
-                    "A lixeira está vazia.",
+                    tr("A lixeira está vazia."),
                     Modifier.align(Alignment.Center).padding(32.dp),
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -119,10 +120,10 @@ fun LixeiraScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (vm.selecionados.isNotEmpty()) {
-                    CirculoVidro(aoClicar = { vm.limparSelecao() }) { Icon(Icons.Rounded.Close, "Cancelar seleção", tint = cor) }
+                    CirculoVidro(aoClicar = { vm.limparSelecao() }) { Icon(Icons.Rounded.Close, tr("Cancelar seleção"), tint = cor) }
                     PilulaVidro {
                         Text(
-                            "${vm.selecionados.size} selecionado(s)",
+                            tr("%s selecionado(s)", vm.selecionados.size),
                             Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                             style = MaterialTheme.typography.titleSmall,
                             color = cor,
@@ -130,13 +131,13 @@ fun LixeiraScreen(
                     }
                     Spacer(Modifier.weight(1f))
                     PilulaVidro {
-                        BotaoVidro(Icons.Rounded.RestoreFromTrash, "Restaurar", { vm.restaurarSelecionados() }, cor)
-                        BotaoVidro(Icons.Rounded.DeleteForever, "Excluir definitivamente", { dialogo = 1 }, cor)
+                        BotaoVidro(Icons.Rounded.RestoreFromTrash, tr("Restaurar"), { vm.restaurarSelecionados() }, cor)
+                        BotaoVidro(Icons.Rounded.DeleteForever, tr("Excluir definitivamente"), { dialogo = 1 }, cor)
                     }
                 } else {
                     PilulaVidro {
                         Text(
-                            "Lixeira",
+                            tr("Lixeira"),
                             Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                             style = MaterialTheme.typography.titleSmall,
                             color = cor,
@@ -144,14 +145,14 @@ fun LixeiraScreen(
                     }
                     Spacer(Modifier.weight(1f))
                     if (vm.lixeira.isNotEmpty()) {
-                        PilulaVidro { TextButton(onClick = { dialogo = 2 }) { Text("Esvaziar") } }
+                        PilulaVidro { TextButton(onClick = { dialogo = 2 }) { Text(tr("Esvaziar")) } }
                     }
                 }
             }
             vm.erroLixeira?.let { msg ->
                 PilulaVidro(Modifier.padding(horizontal = 12.dp)) {
                     Text(msg, Modifier.padding(start = 10.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                    TextButton(onClick = { vm.carregarLixeira() }) { Text("Tentar de novo") }
+                    TextButton(onClick = { vm.carregarLixeira() }) { Text(tr("Tentar de novo")) }
                 }
             }
         }
@@ -160,24 +161,24 @@ fun LixeiraScreen(
     when (dialogo) {
         1 -> AlertDialog(
             onDismissRequest = { dialogo = 0 },
-            title = { Text("Excluir definitivamente?") },
-            text = { Text("${vm.selecionados.size} item(ns) serão apagados para sempre. Não dá para desfazer.") },
-            confirmButton = { TextButton(onClick = { dialogo = 0; vm.excluirDefinitivoSelecionados() }) { Text("Excluir") } },
-            dismissButton = { TextButton(onClick = { dialogo = 0 }) { Text("Cancelar") } },
+            title = { Text(tr("Excluir definitivamente?")) },
+            text = { Text(tr("%s item(ns) serão apagados para sempre. Não dá para desfazer.", vm.selecionados.size)) },
+            confirmButton = { TextButton(onClick = { dialogo = 0; vm.excluirDefinitivoSelecionados() }) { Text(tr("Excluir")) } },
+            dismissButton = { TextButton(onClick = { dialogo = 0 }) { Text(tr("Cancelar")) } },
         )
         2 -> AlertDialog(
             onDismissRequest = { dialogo = 0 },
-            title = { Text("Esvaziar a lixeira?") },
-            text = { Text("Tudo que está na lixeira desta conta será apagado.") },
-            confirmButton = { TextButton(onClick = { dialogo = 3 }) { Text("Continuar") } },
-            dismissButton = { TextButton(onClick = { dialogo = 0 }) { Text("Cancelar") } },
+            title = { Text(tr("Esvaziar a lixeira?")) },
+            text = { Text(tr("Tudo que está na lixeira desta conta será apagado.")) },
+            confirmButton = { TextButton(onClick = { dialogo = 3 }) { Text(tr("Continuar")) } },
+            dismissButton = { TextButton(onClick = { dialogo = 0 }) { Text(tr("Cancelar")) } },
         )
         3 -> AlertDialog(
             onDismissRequest = { dialogo = 0 },
-            title = { Text("Tem certeza?") },
-            text = { Text("Esvaziar a lixeira apaga tudo para sempre, inclusive itens que não aparecem na lista. Não dá para desfazer.") },
-            confirmButton = { TextButton(onClick = { dialogo = 0; vm.esvaziarLixeira() }) { Text("Apagar tudo") } },
-            dismissButton = { TextButton(onClick = { dialogo = 0 }) { Text("Cancelar") } },
+            title = { Text(tr("Tem certeza?")) },
+            text = { Text(tr("Esvaziar a lixeira apaga tudo para sempre, inclusive itens que não aparecem na lista. Não dá para desfazer.")) },
+            confirmButton = { TextButton(onClick = { dialogo = 0; vm.esvaziarLixeira() }) { Text(tr("Apagar tudo")) } },
+            dismissButton = { TextButton(onClick = { dialogo = 0 }) { Text(tr("Cancelar")) } },
         )
     }
 }
