@@ -1,5 +1,6 @@
 package com.nekodrive.app.ui
 
+import com.nekodrive.app.data.tr
 import android.app.Activity
 import android.content.res.Configuration
 import android.widget.Toast
@@ -180,7 +181,7 @@ fun NekoDriveApp() {
                     val login = container.auth.concluirLogin(res.data)
                     vm.aoAutorizar(login.accessToken, login.renovacao, login.validoMs)
                 } catch (e: Exception) {
-                    vm.mostrarErro("Falha ao entrar: ${e.message}")
+                    vm.mostrarErro(tr("Falha ao entrar: %s", e.message))
                 }
             }
         }
@@ -197,7 +198,7 @@ fun NekoDriveApp() {
             try {
                 loginNavegador.launch(container.auth.intentDeLogin(email))
             } catch (e: Exception) {
-                vm.mostrarErro("Não foi possível abrir o navegador para entrar: ${e.message}")
+                vm.mostrarErro(tr("Não foi possível abrir o navegador para entrar: %s", e.message))
             }
         }
     }
@@ -449,7 +450,7 @@ private fun LateralPaisagem(
             Spacer(Modifier.height(4.dp))
             Text("nekodrive", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
             IconButton(onClick = aoBuscar, modifier = Modifier.padding(top = 4.dp).size(40.dp)) {
-                Icon(Icons.Rounded.Search, contentDescription = "Buscar")
+                Icon(Icons.Rounded.Search, contentDescription = tr("Buscar"))
             }
             Spacer(Modifier.height(8.dp))
             NavigationRail(
@@ -470,8 +471,8 @@ private fun LateralPaisagem(
                             NavigationRailItem(
                                 selected = atual == d,
                                 onClick = { aoSelecionar(d) },
-                                icon = { Icon(if (atual == d) d.iconeSelecionado else d.icone, contentDescription = d.rotulo) },
-                                label = { Text(d.rotulo) },
+                                icon = { Icon(if (atual == d) d.iconeSelecionado else d.icone, contentDescription = tr(d.rotulo)) },
+                                label = { Text(tr(d.rotulo)) },
                             )
                         }
                     }
@@ -545,7 +546,7 @@ private fun BarraFlutuante(
                 Destino.entries.forEach { d -> ItemBarra(d, d == atual) { aoSelecionar(d) } }
             }
             CirculoVidro(aoClicar = aoBuscar, modifier = Modifier.size(52.dp), toolbar = true) {
-                Icon(Icons.Rounded.Search, "Buscar", tint = MaterialTheme.colorScheme.onSurface)
+                Icon(Icons.Rounded.Search, tr("Buscar"), tint = MaterialTheme.colorScheme.onSurface)
             }
         }
     }
@@ -563,13 +564,13 @@ private fun ItemBarra(d: Destino, selecionado: Boolean, aoClicar: () -> Unit) {
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(if (selecionado) d.iconeSelecionado else d.icone, contentDescription = d.rotulo)
+        Icon(if (selecionado) d.iconeSelecionado else d.icone, contentDescription = tr(d.rotulo))
         AnimatedVisibility(
             visible = selecionado,
             enter = Animacoes.entrada(fadeIn() + expandIn(), fadeIn(tween(100))),
             exit = Animacoes.saida(fadeOut() + shrinkOut(), fadeOut(tween(100))),
         ) {
-            Text(d.rotulo, Modifier.padding(start = 8.dp), style = MaterialTheme.typography.labelLarge)
+            Text(tr(d.rotulo), Modifier.padding(start = 8.dp), style = MaterialTheme.typography.labelLarge)
         }
     }
 }
