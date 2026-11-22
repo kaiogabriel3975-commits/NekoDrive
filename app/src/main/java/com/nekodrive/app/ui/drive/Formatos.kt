@@ -1,5 +1,7 @@
 package com.nekodrive.app.ui.drive
 
+import com.nekodrive.app.data.tr
+import com.nekodrive.app.data.I18n
 import org.json.JSONObject
 import java.time.LocalDateTime
 import java.time.OffsetDateTime
@@ -17,21 +19,23 @@ fun formatarTamanho(bytes: Long?): String? {
     return if (i == 0) "$bytes B" else String.format(Locale.getDefault(), "%.1f %s", v, unidades[i])
 }
 
-private val FORMATO_DATA = DateTimeFormatter.ofPattern("dd/MM/yyyy")
+private fun formatoData(): DateTimeFormatter =
+    DateTimeFormatter.ofPattern(if (I18n.emIngles) "MM/dd/yyyy" else "dd/MM/yyyy")
 
 fun formatarData(iso: String?): String? = try {
     iso?.let {
-        OffsetDateTime.parse(it).atZoneSameInstant(ZoneId.systemDefault()).format(FORMATO_DATA)
+        OffsetDateTime.parse(it).atZoneSameInstant(ZoneId.systemDefault()).format(formatoData())
     }
 } catch (e: Exception) {
     null
 }
 
-private val FORMATO_DATA_HORA = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")
+private fun formatoDataHora(): DateTimeFormatter =
+    DateTimeFormatter.ofPattern(if (I18n.emIngles) "MM/dd/yyyy HH:mm" else "dd/MM/yyyy HH:mm")
 
 fun formatarDataHora(iso: String?): String? = try {
     iso?.takeIf { it.isNotBlank() }?.let {
-        OffsetDateTime.parse(it).atZoneSameInstant(ZoneId.systemDefault()).format(FORMATO_DATA_HORA)
+        OffsetDateTime.parse(it).atZoneSameInstant(ZoneId.systemDefault()).format(formatoDataHora())
     }
 } catch (e: Exception) {
     null
@@ -41,7 +45,7 @@ fun formatarDataHora(iso: String?): String? = try {
 fun formatarDataExif(exif: String?): String? = try {
     exif?.takeIf { it.length >= 19 }?.let {
         val iso = it.substring(0, 19).replaceFirst(':', '-').replaceFirst(':', '-').replace(' ', 'T')
-        LocalDateTime.parse(iso).format(FORMATO_DATA_HORA)
+        LocalDateTime.parse(iso).format(formatoDataHora())
     }
 } catch (e: Exception) {
     null
@@ -68,28 +72,28 @@ fun montarInformacoes(o: JSONObject, caminho: String): List<Pair<String, String>
     val img = o.optJSONObject("imageMediaMetadata")
     val vid = o.optJSONObject("videoMediaMetadata")
 
-    add("Data de criação", formatarDataExif(img?.optString("time")))
-    add("Enviado ao Drive em", formatarDataHora(o.optString("createdTime")))
-    add("Nome no Drive", o.optString("name"))
-    add("Local no Drive", caminho)
-    add("Tamanho", formatarTamanho(o.optString("size").toLongOrNull()))
+    add(tr("Data de criação"), formatarDataExif(img?.optString("time")))
+    add(tr("Enviado ao Drive em"), formatarDataHora(o.optString("createdTime")))
+    add(tr("Nome no Drive"), o.optString("name"))
+    add(tr("Local no Drive"), caminho)
+    add(tr("Tamanho"), formatarTamanho(o.optString("size").toLongOrNull()))
     val dim = img ?: vid
     val largura = dim?.optInt("width", 0) ?: 0
     val altura = dim?.optInt("height", 0) ?: 0
-    if (largura > 0 && altura > 0) add("Resolução", "$largura × $altura")
-    add("Formato", o.optString("mimeType"))
+    if (largura > 0 && altura > 0) add(tr("Resolução"), tr("%s × %s", largura, altura))
+    add(tr("Formato"), o.optString("mimeType"))
     add(
-        "Dispositivo de captura",
+        tr("Dispositivo de captura"),
         listOf(img?.optString("cameraMake").orEmpty(), img?.optString("cameraModel").orEmpty())
             .filter { it.isNotBlank() }.joinToString(" "),
     )
-    add("Lente", img?.optString("lens"))
-    if (img?.has("focalLength") == true) add("Distância focal", "${numero(img.optDouble("focalLength"))} mm")
-    if (img?.has("aperture") == true) add("Abertura", "f/${numero(img.optDouble("aperture"))}")
-    if (img?.has("exposureTime") == true) add("Exposição", exposicao(img.optDouble("exposureTime")))
+    add(tr("Lente"), img?.optString("lens"))
+    if (img?.has("focalLength") == true) add(tr("Distância focal"), "${numero(img.optDouble("focalLength"))} mm")
+    if (img?.has("aperture") == true) add(tr("Abertura"), "f/${numero(img.optDouble("aperture"))}")
+    if (img?.has("exposureTime") == true) add(tr("Exposição"), exposicao(img.optDouble("exposureTime")))
     if (img?.has("isoSpeed") == true) add("ISO", img.optInt("isoSpeed").toString())
-    if (img?.has("flashUsed") == true) add("Flash", if (img.optBoolean("flashUsed")) "Usado" else "Não usado")
-    add("Conta proprietária", o.optJSONArray("owners")?.optJSONObject(0)?.optString("emailAddress"))
-    add("Link no Drive", o.optString("webViewLink"))
+    if (img?.has("flashUsed") == true) add(tr("Flash"), if (img.optBoolean("flashUsed")) tr("Usado") else tr("Não usado"))
+    add(tr("Conta proprietária"), o.optJSONArray("owners")?.optJSONObject(0)?.optString("emailAddress"))
+    add(tr("Link no Drive"), o.optString("webViewLink"))
     return lista
 }
