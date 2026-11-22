@@ -87,6 +87,7 @@ fun ConfiguracoesTela(vm: DriveViewModel, padding: PaddingValues, onContas: () -
     var estadoExportacao by remember { mutableStateOf<String?>(null) }
     var confirmarLimpeza by remember { mutableStateOf(false) }
     var configGoogle by remember { mutableStateOf(false) }
+    var sobreAutor by remember { mutableStateOf(false) }
     val contexto = LocalContext.current
     val escopo = rememberCoroutineScope()
     val usado = remember(vm.versaoCache) { vm.tamanhoCache() }
@@ -102,6 +103,7 @@ fun ConfiguracoesTela(vm: DriveViewModel, padding: PaddingValues, onContas: () -
     }
 
     if (configGoogle) ConfigurarGoogleDialog(onFechar = { configGoogle = false }, onSalvo = { configGoogle = false })
+    if (sobreAutor) SobreAutorDialog(onFechar = { sobreAutor = false })
 
     run {
         Column(
@@ -258,6 +260,9 @@ fun ConfiguracoesTela(vm: DriveViewModel, padding: PaddingValues, onContas: () -
             estadoExportacao?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+
+            Secao("Sobre")
+            TextButton(onClick = { sobreAutor = true }) { Text("Sobre o autor") }
         }
     }
 }
