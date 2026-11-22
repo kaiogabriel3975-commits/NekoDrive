@@ -1,5 +1,6 @@
 package com.nekodrive.app.ui.player
 
+import com.nekodrive.app.data.tr
 import android.content.Context
 import android.os.Bundle
 import android.view.ContextThemeWrapper
@@ -126,9 +127,9 @@ class CastControle(private val ctx: Context, private val servidor: ServidorLocal
 
     /** Começa a transmitir [url] (endereço do Drive) pela TV, a partir de [posicaoMs]. */
     fun iniciar(titulo: String, url: String, mime: String, posicaoMs: Long) {
-        val sessao = contexto?.sessionManager?.currentCastSession ?: throw IOException("Sem sessão do Cast")
-        val remoto = sessao.remoteMediaClient ?: throw IOException("O dispositivo não está pronto")
-        val ip = ipLocal() ?: throw IOException("Conecte o celular ao Wi-Fi")
+        val sessao = contexto?.sessionManager?.currentCastSession ?: throw IOException(tr("Sem sessão do Cast"))
+        val remoto = sessao.remoteMediaClient ?: throw IOException(tr("O dispositivo não está pronto"))
+        val ip = ipLocal() ?: throw IOException(tr("Conecte o celular ao Wi-Fi"))
         servidor.iniciarSeNecessario()
         val chave = servidor.registrar(url, mime, email)
         val endereco = "http://$ip:${servidor.porta}/v/$chave"
