@@ -1,5 +1,6 @@
 package com.nekodrive.app.ui
 
+import com.nekodrive.app.data.tr
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -95,10 +96,10 @@ fun ConfiguracoesTela(vm: DriveViewModel, padding: PaddingValues, onContas: () -
     if (confirmarLimpeza) {
         AlertDialog(
             onDismissRequest = { confirmarLimpeza = false },
-            title = { Text("Limpar o cache?") },
-            text = { Text("Apaga as fotos e os vídeos guardados neste aparelho, inclusive os que você baixou para ver sem internet.") },
-            confirmButton = { TextButton(onClick = { confirmarLimpeza = false; vm.limparCache() }) { Text("Limpar") } },
-            dismissButton = { TextButton(onClick = { confirmarLimpeza = false }) { Text("Cancelar") } },
+            title = { Text(tr("Limpar o cache?")) },
+            text = { Text(tr("Apaga as fotos e os vídeos guardados neste aparelho, inclusive os que você baixou para ver sem internet.")) },
+            confirmButton = { TextButton(onClick = { confirmarLimpeza = false; vm.limparCache() }) { Text(tr("Limpar")) } },
+            dismissButton = { TextButton(onClick = { confirmarLimpeza = false }) { Text(tr("Cancelar")) } },
         )
     }
 
@@ -113,115 +114,117 @@ fun ConfiguracoesTela(vm: DriveViewModel, padding: PaddingValues, onContas: () -
                 .padding(top = padding.calculateTopPadding() + 12.dp, bottom = padding.calculateBottomPadding() + 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("Configurações", style = MaterialTheme.typography.titleLarge)
+            Text(tr("Configurações"), style = MaterialTheme.typography.titleLarge)
 
-            Secao("Aparência")
-            LinhaOpcoes("Tema", listOf("Sistema" to 0, "Claro" to 1, "Escuro" to 2), vm.tema) { vm.definirTema(it) }
-            LinhaSwitch("Tela inicial em grade", if (vm.grade) "Grade de miniaturas" else "Lista com detalhes", vm.grade) { vm.alternarModo() }
-            LinhaOpcoes("Tamanho das miniaturas", listOf("Médias" to 1, "Grandes" to 2), vm.tamanhoMiniatura) {
+            Secao(tr("Aparência"))
+            LinhaOpcoes(tr("Tema"), listOf(tr("Sistema") to 0, tr("Claro") to 1, tr("Escuro") to 2), vm.tema) { vm.definirTema(it) }
+            // o nome da opção e os nomes dos idiomas ficam nos dois idiomas, para quem escolheu o errado conseguir voltar
+            LinhaOpcoes("Idioma / Language", listOf(tr("Automático") to 0, "Português" to 1, "English" to 2), vm.idioma) { vm.definirIdioma(it) }
+            LinhaSwitch(tr("Tela inicial em grade"), if (vm.grade) tr("Grade de miniaturas") else tr("Lista com detalhes"), vm.grade) { vm.alternarModo() }
+            LinhaOpcoes(tr("Tamanho das miniaturas"), listOf(tr("Médias") to 1, tr("Grandes") to 2), vm.tamanhoMiniatura) {
                 vm.definirTamanhoMiniatura(it)
             }
             LinhaOpcoes(
-                "Colunas da grade",
-                listOf("Automático" to 0, "2" to 2, "3" to 3, "4" to 4),
+                tr("Colunas da grade"),
+                listOf(tr("Automático") to 0, "2" to 2, "3" to 3, "4" to 4),
                 vm.colunas,
-                descricao = "Automático usa o tamanho das miniaturas; um número fixo ignora esse tamanho na grade",
+                descricao = tr("Automático usa o tamanho das miniaturas; um número fixo ignora esse tamanho na grade"),
             ) { vm.definirColunas(it) }
-            LinhaSwitch("Nomes na grade", "Mostra o nome de fotos e vídeos. Pastas e outros arquivos sempre mostram", vm.mostrarNomes) {
+            LinhaSwitch(tr("Nomes na grade"), tr("Mostra o nome de fotos e vídeos. Pastas e outros arquivos sempre mostram"), vm.mostrarNomes) {
                 vm.definirMostrarNomes(it)
             }
-            LinhaSwitch("Pastas sempre primeiro", "Desligado, pastas e arquivos se misturam na ordenação", vm.pastasPrimeiro) {
+            LinhaSwitch(tr("Pastas sempre primeiro"), tr("Desligado, pastas e arquivos se misturam na ordenação"), vm.pastasPrimeiro) {
                 vm.definirPastasPrimeiro(it)
             }
-            LinhaSwitch("Animar GIFs nas miniaturas", "Desligado, mostra só o primeiro quadro e economiza dados e bateria", vm.animarGifs) {
+            LinhaSwitch(tr("Animar GIFs nas miniaturas"), tr("Desligado, mostra só o primeiro quadro e economiza dados e bateria"), vm.animarGifs) {
                 vm.definirAnimarGifs(it)
             }
-            LinhaSwitch("Efeito de vidro (blur)", "Desligue se o app ficar pesado em algum aparelho", vm.vidroAtivo) { vm.definirVidro(it) }
+            LinhaSwitch(tr("Efeito de vidro (blur)"), tr("Desligue se o app ficar pesado em algum aparelho"), vm.vidroAtivo) { vm.definirVidro(it) }
             if (vm.vidroAtivo) {
-                LinhaOpcoes("Intensidade do blur", listOf("Baixa" to 0, "Média" to 1, "Alta" to 2), vm.blurIntensidade) {
+                LinhaOpcoes(tr("Intensidade do blur"), listOf(tr("Baixa") to 0, tr("Média") to 1, tr("Alta") to 2), vm.blurIntensidade) {
                     vm.definirBlurIntensidade(it)
                 }
             }
-            LinhaSwitch("Reflexos de luz", "O vidro é iluminado pela mídia que está por perto, na cor dela", vm.reflexoPilula) {
+            LinhaSwitch(tr("Reflexos de luz"), tr("O vidro é iluminado pela mídia que está por perto, na cor dela"), vm.reflexoPilula) {
                 vm.definirReflexoPilula(it)
             }
             if (vm.reflexoPilula) {
                 LinhaSwitch(
-                    "Luz só nas toolbars",
-                    "Ligado: só na pílula da galeria, na do player de vídeo, na toolbar principal e na busca. " +
-                        "Desligado: em todas as peças de vidro com reflexo",
+                    tr("Luz só nas toolbars"),
+                    tr("Ligado: só na pílula da galeria, na do player de vídeo, na toolbar principal e na busca. ") +
+                        tr("Desligado: em todas as peças de vidro com reflexo"),
                     vm.reflexoSoToolbars,
                 ) { vm.definirReflexoSoToolbars(it) }
             }
             LinhaOpcoes(
-                "Fundo dos cards de mídia",
-                listOf("Cor da mídia" to 0, "Sem cores" to 1, "Miniatura desfocada" to 2),
+                tr("Fundo dos cards de mídia"),
+                listOf(tr("Cor da mídia") to 0, tr("Sem cores") to 1, tr("Miniatura desfocada") to 2),
                 vm.fundoCard,
                 descricao = when (vm.fundoCard) {
-                    1 -> "Cards neutros, sem a cor da mídia"
-                    2 -> "A miniatura invertida na vertical, com blur forte e escurecida"
-                    else -> "O card pega a cor que mais aparece na mídia"
+                    1 -> tr("Cards neutros, sem a cor da mídia")
+                    2 -> tr("A miniatura invertida na vertical, com blur forte e escurecida")
+                    else -> tr("O card pega a cor que mais aparece na mídia")
                 },
             ) { vm.definirFundoCard(it) }
 
-            Secao("Animações e toque")
+            Secao(tr("Animações e toque"))
             LinhaOpcoes(
-                "Animações",
-                listOf("Normais" to 0, "Baratas" to 1, "Sem animações" to 2),
+                tr("Animações"),
+                listOf(tr("Normais") to 0, tr("Baratas") to 1, tr("Sem animações") to 2),
                 vm.animacoes,
                 descricao = when (vm.animacoes) {
-                    1 -> "Transições curtas, sem blur de dissolução, sem inclinação e sem molas: pesam bem menos na GPU"
-                    2 -> "Tudo acontece na hora, sem transições (os nomes longos também param de rolar)"
-                    else -> "Todas as animações, como foram desenhadas"
+                    1 -> tr("Transições curtas, sem blur de dissolução, sem inclinação e sem molas: pesam bem menos na GPU")
+                    2 -> tr("Tudo acontece na hora, sem transições (os nomes longos também param de rolar)")
+                    else -> tr("Todas as animações, como foram desenhadas")
                 },
             ) { vm.definirAnimacoes(it) }
-            LinhaSwitch("Vibração ao tocar", "Ao segurar um item e ao arrastar uma foto", vm.vibrar) { vm.definirVibrar(it) }
+            LinhaSwitch(tr("Vibração ao tocar"), tr("Ao segurar um item e ao arrastar uma foto"), vm.vibrar) { vm.definirVibrar(it) }
             LinhaOpcoes(
-                "Pausa ao fechar uma mídia",
-                listOf("Nenhuma" to 0, "Curta" to 100, "Longa" to 200),
+                tr("Pausa ao fechar uma mídia"),
+                listOf(tr("Nenhuma") to 0, tr("Curta") to 100, tr("Longa") to 200),
                 vm.esperaFecharMs,
             ) { vm.definirEsperaFechar(it) }
 
-            Secao("Rede")
+            Secao(tr("Rede"))
             LinhaSwitch(
-                "Miniaturas só no Wi-Fi",
-                "Nos dados móveis aparecem só as miniaturas já guardadas no aparelho",
+                tr("Miniaturas só no Wi-Fi"),
+                tr("Nos dados móveis aparecem só as miniaturas já guardadas no aparelho"),
                 vm.miniaturasSoWifi,
             ) { vm.definirMiniaturasSoWifi(it) }
 
-            Secao("Player de vídeo")
-            LinhaSwitch("Repetir ao terminar", "O vídeo recomeça sozinho do início", vm.repetirVideo) { vm.definirRepetirVideo(it) }
-            LinhaSwitch("Continuar de onde parou", "Retoma o vídeo na posição em que você saiu", vm.retomarVideo) { vm.definirRetomarVideo(it) }
-            LinhaOpcoes("Toque duplo nas laterais pula", listOf("5 s" to 5, "10 s" to 10, "15 s" to 15, "30 s" to 30), vm.saltoSeg) {
+            Secao(tr("Player de vídeo"))
+            LinhaSwitch(tr("Repetir ao terminar"), tr("O vídeo recomeça sozinho do início"), vm.repetirVideo) { vm.definirRepetirVideo(it) }
+            LinhaSwitch(tr("Continuar de onde parou"), tr("Retoma o vídeo na posição em que você saiu"), vm.retomarVideo) { vm.definirRetomarVideo(it) }
+            LinhaOpcoes(tr("Toque duplo nas laterais pula"), listOf("5 s" to 5, "10 s" to 10, "15 s" to 15, "30 s" to 30), vm.saltoSeg) {
                 vm.definirSaltoSeg(it)
             }
-            LinhaOpcoes("Velocidade ao segurar o dedo", listOf("1,5x" to 1.5f, "2x" to 2f, "3x" to 3f), vm.velocidadeTurbo) {
+            LinhaOpcoes(tr("Velocidade ao segurar o dedo"), listOf("1,5x" to 1.5f, "2x" to 2f, "3x" to 3f), vm.velocidadeTurbo) {
                 vm.definirTurbo(it)
             }
             LinhaOpcoes(
-                "Resolução máxima no Wi-Fi",
-                listOf("Máxima" to 4320, "1080p" to 1080, "720p" to 720, "480p" to 480),
+                tr("Resolução máxima no Wi-Fi"),
+                listOf(tr("Máxima") to 4320, "1080p" to 1080, "720p" to 720, "480p" to 480),
                 vm.resWifi,
             ) { vm.definirResWifi(it) }
             LinhaOpcoes(
-                "Resolução máxima nos dados móveis",
+                tr("Resolução máxima nos dados móveis"),
                 listOf("720p" to 720, "540p" to 540, "360p" to 360, "240p" to 240),
                 vm.resMovel,
             ) { vm.definirResMovel(it) }
             LinhaOpcoes(
-                "Esconder os controles após",
-                listOf("2 s" to 2000, "3,5 s" to 3500, "5 s" to 5000, "Nunca" to 0),
+                tr("Esconder os controles após"),
+                listOf("2 s" to 2000, "3,5 s" to 3500, "5 s" to 5000, tr("Nunca") to 0),
                 vm.controlesMs,
             ) { vm.definirControlesMs(it) }
 
-            Secao("Conta")
-            TextButton(onClick = onContas) { Text("Gerenciar contas") }
-            TextButton(onClick = { configGoogle = true }) { Text("ID do cliente do Google") }
+            Secao(tr("Conta"))
+            TextButton(onClick = onContas) { Text(tr("Gerenciar contas")) }
+            TextButton(onClick = { configGoogle = true }) { Text(tr("ID do cliente do Google")) }
 
-            Secao("Cache de vídeos e fotos")
+            Secao(tr("Cache de vídeos e fotos"))
             Text(
-                "Em uso: ${formatarTamanho(usado) ?: "0 B"} de ${limite.roundToInt()} GB. " +
-                    "Ao passar do limite, o que foi usado há mais tempo é apagado primeiro.",
+                tr("Em uso: %s de %s GB. ", formatarTamanho(usado) ?: "0 B", limite.roundToInt()) +
+                    tr("Ao passar do limite, o que foi usado há mais tempo é apagado primeiro."),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -233,36 +236,36 @@ fun ConfiguracoesTela(vm: DriveViewModel, padding: PaddingValues, onContas: () -
                 steps = 48,
             )
             Button(onClick = { confirmarLimpeza = true }, enabled = !vm.limpandoCache) {
-                Text(if (vm.limpandoCache) "Limpando…" else "Limpar cache")
+                Text(if (vm.limpandoCache) "Limpando…" else tr("Limpar cache"))
             }
 
-            Secao("Diagnóstico")
+            Secao(tr("Diagnóstico"))
             Text(
-                "Exporta os eventos registrados pelo NekoDrive e detalhes de falhas do aplicativo para a pasta Downloads.",
+                tr("Exporta os eventos registrados pelo NekoDrive e detalhes de falhas do aplicativo para a pasta Downloads."),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Button(
                 onClick = {
-                    estadoExportacao = "Exportando logs…"
+                    estadoExportacao = tr("Exportando logs…")
                     escopo.launch {
                         estadoExportacao = withContext(Dispatchers.IO) {
                             runCatching { AppLogger.exportToDownloads(contexto) }
                                 .fold(
-                                    onSuccess = { "Logs salvos em Downloads/$it" },
-                                    onFailure = { "Falha ao exportar: ${it.localizedMessage ?: "erro desconhecido"}" },
+                                    onSuccess = { tr("Logs salvos em Downloads/%s", it) },
+                                    onFailure = { tr("Falha ao exportar: %s", it.localizedMessage ?: tr("erro desconhecido")) },
                                 )
                         }
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("Exportar logs de funcionamento") }
+            ) { Text(tr("Exportar logs de funcionamento")) }
             estadoExportacao?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
-            Secao("Sobre")
-            TextButton(onClick = { sobreAutor = true }) { Text("Sobre o autor") }
+            Secao(tr("Sobre"))
+            TextButton(onClick = { sobreAutor = true }) { Text(tr("Sobre o autor")) }
         }
     }
 }
