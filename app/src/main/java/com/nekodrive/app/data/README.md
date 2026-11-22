@@ -1,3 +1,4 @@
+[README.md](https://github.com/user-attachments/files/35232338/README.md)
 # NekoDrive
 
 App Android (Kotlin + Jetpack Compose) para ver vídeos e fotos do seu Google Drive, organizado por pastas.
@@ -11,6 +12,7 @@ projeto no Google Cloud.
 - **Vídeos:** player em tela cheia com legendas (embutidas e arquivos `.srt` ou `.vtt` ao lado do vídeo), velocidade, escolha de resolução, Picture-in-Picture, retomar de onde parou e Chromecast.
 - **Cache e offline:** o que você assiste e baixa fica em um cache único, com limite ajustável (padrão 5 GB). Itens salvos abrem sem internet. Se o arquivo for editado no Drive, a cópia antiga do cache é descartada (o app compara o md5 do conteúdo).
 - **Organização:** favoritos (só no app, separados por conta), lixeira do Drive com restaurar e excluir definitivamente, mover, copiar, renomear, criar pasta, enviar arquivos, compartilhar e abrir em outro app ou player.
+- **Sincronização:** favoritos, capas de pasta e ajustes do app ficam guardados no seu próprio Drive e voltam sozinhos ao reinstalar o app ou entrar em outro aparelho (veja abaixo).
 - **Miniaturas:** GIFs grandes ganham uma versão leve em cache depois da primeira vez, para gastar menos dados e memória.
 
 Requer **Android 12 ou mais novo** (minSdk 31).
@@ -93,6 +95,22 @@ para você não trocar a chave por acidente (trocar obriga a desinstalar o app e
 
 Nunca envie o `.jks` ao repositório (já está no `.gitignore`).
 
+## Sincronização de ajustes, favoritos e capas
+
+O que só o app enxerga (favoritos, capas de pasta e ajustes) é guardado no Drive de cada conta, na pasta **etc** da
+raiz do Meu Drive, em um único arquivo: **configNkapp.txt**. Ele é compactado (gzip) para ocupar o mínimo e não foi feito
+para ser aberto ou editado à mão. Não apague a pasta se quiser manter esses dados.
+
+- **Quando carrega:** ao abrir o app (alguns segundos depois, em segundo plano) e ao adicionar uma conta.
+- **Quando salva:** cerca de 30 segundos depois da última mudança e quando o app vai para segundo plano. Só sobe se algo
+  mudou de verdade.
+- **O que não viaja:** tokens de acesso, o ID do cliente do Google, o limite do cache (depende do espaço de cada aparelho),
+  o aviso de notificação, e posição e "assistido" dos vídeos.
+- **Conflitos:** os ajustes valem para o app todo e vence o mais recente (usa o relógio dos aparelhos). Favoritos e capas
+  são por conta: se só o Drive mudou, ele vence; se os dois lados mudaram, os dois são juntados.
+- **Privacidade:** o arquivo fica na sua conta, no seu Drive, e nenhum servidor do app o vê. Remover uma conta do app não
+  apaga o arquivo; para apagar de vez, exclua a pasta **etc** no Drive.
+
 ## Uso
 
 - **Pastas:** toque abre; segurar seleciona vários itens (baixar, favoritar, mover para a lixeira). Puxar a lista para baixo atualiza.
@@ -125,3 +143,11 @@ Nunca envie o `.jks` ao repositório (já está no `.gitignore`).
 6. Favoritar, ver na aba Favoritos; mover para a lixeira, restaurar, excluir e esvaziar.
 7. Pasta com GIFs grandes: rolar, fechar e abrir de novo (a segunda vez deve carregar mais leve).
 8. Chromecast na mesma rede Wi-Fi e um formato que o player não toca (versão convertida).
+
+## Licença
+
+Apache License 2.0, com os créditos a **Kyle_Neeko**. Você pode usar, alterar e redistribuir o código, inclusive em
+projetos comerciais, desde que mantenha o arquivo `LICENSE`, o arquivo `NOTICE` (com o crédito) e avise nos arquivos
+que modificar. O código é fornecido como está, sem garantia: use por sua conta e risco, principalmente em operações
+que alteram o seu Drive (mover, apagar, enviar).
+
