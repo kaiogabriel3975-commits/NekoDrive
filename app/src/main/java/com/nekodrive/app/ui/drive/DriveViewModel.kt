@@ -1,5 +1,7 @@
 package com.nekodrive.app.ui.drive
 
+import com.nekodrive.app.data.I18n
+import com.nekodrive.app.data.tr
 import android.content.ContentValues
 import android.os.Environment
 import android.os.SystemClock
@@ -39,7 +41,10 @@ import java.io.File
 import java.io.IOException
 import java.net.UnknownHostException
 
-data class Pasta(val id: String, val nome: String)
+data class Pasta(val id: String, val nome: String) {
+    /** O nome que aparece na tela: a raiz muda com o idioma, as outras pastas mostram o nome que têm no Drive. */
+    val titulo: String get() = if (id == "root") tr("Meu Drive") else nome
+}
 
 /** Situação de um arquivo na lista: salvo no cache, assistido, ou baixando (progresso de 0 a 1). */
 data class EstadoArquivo(
@@ -118,6 +123,7 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
     var miniaturasSoWifi by mutableStateOf(c.prefs.miniaturasSoWifi); private set
     var vibrar by mutableStateOf(c.prefs.vibrar); private set
     var animacoes by mutableIntStateOf(c.prefs.animacoes); private set
+    var idioma by mutableIntStateOf(c.prefs.idioma); private set
     val tema: Int get() = c.prefs.tema
 
     fun definirTema(v: Int) { c.prefs.tema = v }
@@ -141,6 +147,7 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
     fun definirMiniaturasSoWifi(v: Boolean) { miniaturasSoWifi = v; c.prefs.miniaturasSoWifi = v }
     fun definirVibrar(v: Boolean) { vibrar = v; c.prefs.vibrar = v }
     fun definirAnimacoes(v: Int) { animacoes = v; c.prefs.animacoes = v; Animacoes.modo = v }
+    fun definirIdioma(v: Int) { idioma = v; c.prefs.idioma = v; I18n.definir(v) }
     fun definirPastasPrimeiro(v: Boolean) {
         pastasPrimeiro = v
         c.prefs.pastasPrimeiro = v
@@ -293,6 +300,8 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
         miniaturasSoWifi = c.prefs.miniaturasSoWifi
         vibrar = c.prefs.vibrar
         animacoes = c.prefs.animacoes
+        idioma = c.prefs.idioma
+        I18n.definir(idioma)
         TempoGaleria.esperaMs = esperaFecharMs
         Animacoes.modo = animacoes
         if (ordemAntes != Triple(campo, crescente, pastasPrimeiro)) {
@@ -316,7 +325,7 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
     fun consumirReautorizacao() { reautorizar = null }
 
     private fun pedirReautorizacao(email: String) {
-        erro = "A autorização do Google expirou. Confirme o acesso na tela que vai abrir."
+        erro = tr("A autorização do Google expirou. Confirme o acesso na tela que vai abrir.")
         reautorizar = email
     }
 
@@ -382,11 +391,11 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
             } catch (e: CancellationException) {
                 throw e
             } catch (e: UnknownHostException) {
-                erro = "Sem conexão com a internet."
+                erro = tr("Sem conexão com a internet.")
             } catch (e: NeedsConsentException) {
                 pedirReautorizacao(conta.email)
             } catch (e: Exception) {
-                erro = e.message ?: "Falha ao atualizar a pasta."
+                erro = e.message ?: tr("Falha ao atualizar a pasta.")
             } finally {
                 // só o job mais recente desliga o indicador (um job cancelado não apaga o do novo)
                 if (minha == geracaoCarga) carregando = false
@@ -431,11 +440,11 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
         } catch (e: CancellationException) {
             throw e
         } catch (e: UnknownHostException) {
-            erro = "Sem conexão com a internet."
+            erro = tr("Sem conexão com a internet.")
         } catch (e: NeedsConsentException) {
             pedirReautorizacao(conta.email)
         } catch (e: Exception) {
-            erro = e.message ?: "Falha ao carregar a pasta."
+            erro = e.message ?: tr("Falha ao carregar a pasta.")
         } finally {
             if (minha == geracaoCarga) carregando = false
         }
@@ -580,7 +589,7 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
                 }.awaitAll()
             }
             selecionados = falhas
-            if (falhas.isNotEmpty()) erro = "Não foi possível mover ${falhas.size} item(ns) para a lixeira."
+            if (falhas.isNotEmpty()) erro = tr("Não foi possível mover %s item(ns) para a lixeira.", falhas.size)
         }
     }
 
@@ -608,7 +617,7 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                erro = "Não foi possível mover para a lixeira: ${e.message}"
+                erro = tr("Não foi possível mover para a lixeira: %s", e.message)
             }
         }
     }
@@ -708,7 +717,7 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                detalhes = listOf("Erro" to (e.message ?: "Falha ao carregar as informações"))
+                detalhes = listOf(tr("Erro") to (e.message ?: tr("Falha ao carregar as informações")))
             } finally {
                 carregandoDetalhes = false
             }
@@ -719,7 +728,7 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
 
     /** Baixa o arquivo para a pasta de cópias do cache (usada pelo botão copiar) e devolve o arquivo. */
     suspend fun copiarParaCache(f: DriveFile, pasta: String = "copiar"): File {
-        val conta = contaAtual ?: error("Nenhuma conta selecionada")
+        val conta = contaAtual ?: error(tr("Nenhuma conta selecionada"))
         val dir = File(c.cacheDir, pasta)
         // Só limpa o que já é antigo: apagar tudo quebrava um anexo ou compartilhamento ainda em uso
         // por outro app (ex.: rascunho de e-mail) quando se compartilhava outro arquivo em seguida.
@@ -764,7 +773,7 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
         val tarefa = tarefas[f.id] ?: return
         if (!tarefa.isActive) return
         tarefa.cancel()
-        aviso = "Download de “${f.name}” cancelado"
+        aviso = tr("Download de “%s” cancelado", f.name)
     }
 
     /**
@@ -800,11 +809,11 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
                         salvarEmDownloads(conta.email, f, subpasta)
                     }
                 }
-                if (!midia && subpasta == null) aviso = "“${f.name}” salvo em Downloads"
+                if (!midia && subpasta == null) aviso = tr("“%s” salvo em Downloads", f.name)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                erro = "Falha ao baixar ${f.name}: ${e.message}"
+                erro = tr("Falha ao baixar %s: %s", f.name, e.message)
             } finally {
                 progressos.remove(f.id)
                 versaoCache++
@@ -822,9 +831,9 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
             put(MediaStore.Downloads.IS_PENDING, 1)
         }
         val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, valores)
-            ?: throw IOException("Não foi possível criar o arquivo em Downloads")
+            ?: throw IOException(tr("Não foi possível criar o arquivo em Downloads"))
         try {
-            val saida = resolver.openOutputStream(uri) ?: throw IOException("Não foi possível gravar em Downloads")
+            val saida = resolver.openOutputStream(uri) ?: throw IOException(tr("Não foi possível gravar em Downloads"))
             val aoProgresso = progressoLimitado(f.id)
             saida.use { c.drive.baixarParaStream(email, f.id, it, aoProgresso) }
             val concluido = ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }
@@ -864,7 +873,7 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
                 throw e
             } catch (e: Exception) {
                 planoDownload = null
-                aviso = "Não foi possível ler a pasta: ${e.message}"
+                aviso = tr("Não foi possível ler a pasta: %s", e.message)
             }
         }
     }
@@ -873,7 +882,7 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
         val plano = planoDownload ?: return
         planoDownload = null
         plano.arquivos.forEach { baixar(it.arquivo, it.caminho) }
-        aviso = "Baixando ${plano.arquivos.size} arquivo(s)…"
+        aviso = tr("Baixando %s arquivo(s)…", plano.arquivos.size)
     }
 
     fun cancelarDownloadDePastas() {
@@ -896,7 +905,7 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                aviso = "Não foi possível renomear: ${e.message}"
+                aviso = tr("Não foi possível renomear: %s", e.message)
             }
         }
     }
@@ -913,7 +922,7 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
         if (arquivoDetalhes?.id == id) {
             arquivoDetalhes = arquivoDetalhes?.copy(name = nome)
             tituloDetalhes = nome
-            detalhes = detalhes?.map { if (it.first == "Nome no Drive") it.first to nome else it }
+            detalhes = detalhes?.map { if (it.first == tr("Nome no Drive")) it.first to nome else it }
         }
         versaoCache++
     }
@@ -962,7 +971,7 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
             var falhas = 0
             try {
                 alvos.forEachIndexed { i, f ->
-                    operacao = (if (copiar) "Copiando" else "Movendo") + " ${i + 1}/${alvos.size}: ${f.name}"
+                    operacao = (if (copiar) tr("Copiando") else tr("Movendo")) + " ${i + 1}/${alvos.size}: ${f.name}"
                     try {
                         if (copiar) c.drive.copiar(conta.email, f, idDestino) else c.drive.mover(conta.email, f.id, idDestino)
                         feitos++
@@ -970,7 +979,7 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
                         throw e
                     } catch (e: Exception) {
                         falhas++
-                        erro = "Não foi possível ${if (copiar) "copiar" else "mover"} ${f.name}: ${e.message}"
+                        erro = if (copiar) tr("Não foi possível copiar %s: %s", f.name, e.message) else tr("Não foi possível mover %s: %s", f.name, e.message)
                     }
                 }
             } finally {
@@ -979,15 +988,15 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
                 operacao = null
                 val cancelada = !isActive
                 if (feitos > 0) {
-                    aviso = "$feitos item(ns) ${if (copiar) "copiado(s)" else "movido(s)"} para $nomeDestino" +
-                        (if (falhas > 0) " ($falhas com erro)" else "") + (if (cancelada) " — cancelado" else "")
+                    aviso = (if (copiar) tr("%s item(ns) copiado(s) para %s", feitos, nomeDestino) else tr("%s item(ns) movido(s) para %s", feitos, nomeDestino)) +
+                        (if (falhas > 0) tr(" (%s com erro)", falhas) else "") + (if (cancelada) tr(" — cancelado") else "")
                     limparSelecao()
                     versaoCache++
                     // A lista em cache da pasta de destino ficou velha (ex.: mover para a pasta de cima e voltar).
                     cache.remove(chave(idDestino))
                     recarregar()
                 } else if (cancelada) {
-                    aviso = "Operação cancelada"
+                    aviso = tr("Operação cancelada")
                 }
             }
         }
@@ -1001,12 +1010,12 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
         viewModelScope.launch {
             try {
                 c.drive.criarPasta(conta.email, limpo, pai)
-                aviso = "Pasta \"$limpo\" criada"
+                aviso = tr("Pasta \"%s\" criada", limpo)
                 recarregar()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                erro = "Não foi possível criar a pasta: ${e.message}"
+                erro = tr("Não foi possível criar a pasta: %s", e.message)
             }
         }
     }
@@ -1035,13 +1044,13 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
                         }
                     }
                     val mime = c.resolver.getType(uri) ?: "application/octet-stream"
-                    val prefixo = "Enviando ${i + 1}/${uris.size}: $nome"
+                    val prefixo = tr("Enviando %s/%s: %s", i + 1, uris.size, nome)
                     operacao = prefixo
                     var ultimo = -1
                     try {
                         c.drive.enviar(
                             conta.email, nome, mime, tamanho, pai,
-                            abrir = { c.resolver.openInputStream(uri) ?: throw java.io.IOException("Não foi possível ler $nome") },
+                            abrir = { c.resolver.openInputStream(uri) ?: throw java.io.IOException(tr("Não foi possível ler %s", nome)) },
                             aoProgresso = { p ->
                                 val pct = (p * 100).toInt()
                                 if (pct != ultimo) { ultimo = pct; operacao = "$prefixo ($pct%)" }
@@ -1051,7 +1060,7 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
-                        erro = "Falha ao enviar $nome: ${e.message}"
+                        erro = tr("Falha ao enviar %s: %s", nome, e.message)
                     }
                 }
             } finally {
@@ -1059,10 +1068,10 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
                 operacao = null
                 val cancelado = !isActive
                 if (ok > 0) {
-                    aviso = "$ok arquivo(s) enviado(s)" + if (cancelado) " — cancelado" else ""
+                    aviso = tr("%s arquivo(s) enviado(s)", ok) + if (cancelado) tr(" — cancelado") else ""
                     recarregar()
                 } else if (cancelado) {
-                    aviso = "Envio cancelado"
+                    aviso = tr("Envio cancelado")
                 }
             }
         }
@@ -1126,7 +1135,7 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            aviso = "Não foi possível listar as fotos: ${e.message}"
+            aviso = tr("Não foi possível listar as fotos: %s", e.message)
         } finally {
             carregandoCapa = false
         }
@@ -1146,7 +1155,7 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
             capas.remove(pasta.id)
         } else if (foto.isVideo) {
             val link = foto.thumbnailLink
-            if (link == null) { aviso = "Este vídeo ainda não tem miniatura no Drive."; return }
+            if (link == null) { aviso = tr("Este vídeo ainda não tem miniatura no Drive."); return }
             capas[pasta.id] = "v:${foto.id}|$link"
         } else {
             capas[pasta.id] = foto.id
@@ -1185,7 +1194,7 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                erro = "Não foi possível ajustar o cache: ${e.message}"
+                erro = tr("Não foi possível ajustar o cache: %s", e.message)
             } finally {
                 operacoesCache--
                 limpandoCache = operacoesCache > 0
@@ -1332,9 +1341,9 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
         } catch (e: CancellationException) {
             throw e
         } catch (e: UnknownHostException) {
-            erroLixeira = "Sem conexão com a internet."
+            erroLixeira = tr("Sem conexão com a internet.")
         } catch (e: Exception) {
-            erroLixeira = e.message ?: "Falha ao carregar a lixeira."
+            erroLixeira = e.message ?: tr("Falha ao carregar a lixeira.")
         } finally {
             carregandoLixeira = false
         }
@@ -1365,17 +1374,17 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
                 }.awaitAll()
             }
             selecionados = falhas
-            if (falhas.isNotEmpty()) erroLixeira = "Não foi possível $titulo ${falhas.size} item(ns)."
+            if (falhas.isNotEmpty()) erroLixeira = tr("Não foi possível %s %s item(ns).", titulo, falhas.size)
             aoConcluir()
         }
     }
 
-    fun restaurarSelecionados() = acaoNaLixeira("restaurar", { email, id -> c.drive.restaurar(email, id) }) {
+    fun restaurarSelecionados() = acaoNaLixeira(tr("restaurar"), { email, id -> c.drive.restaurar(email, id) }) {
         cache.clear()
         recarregar()
     }
 
-    fun excluirDefinitivoSelecionados() = acaoNaLixeira("excluir", { email, id -> c.drive.excluirDefinitivo(email, id) })
+    fun excluirDefinitivoSelecionados() = acaoNaLixeira(tr("excluir"), { email, id -> c.drive.excluirDefinitivo(email, id) })
 
     fun esvaziarLixeira() {
         val conta = contaAtual ?: return
@@ -1386,7 +1395,7 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                erroLixeira = e.message ?: "Falha ao esvaziar a lixeira."
+                erroLixeira = e.message ?: tr("Falha ao esvaziar a lixeira.")
             }
         }
     }
@@ -1395,7 +1404,7 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
 
     fun aoAutorizar(accessToken: String?, renovacao: String?, validoMs: Long) {
         if (accessToken == null) {
-            erro = "O Google não devolveu a autorização. Tente de novo."
+            erro = tr("O Google não devolveu a autorização. Tente de novo.")
             return
         }
         viewModelScope.launch {
@@ -1404,11 +1413,11 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
                 // Sem o token de renovação a conta só funcionaria por cerca de 1 hora: não vale adicionar assim.
                 if (renovacao != null) {
                     if (!c.auth.guardarRenovacao(nova.email, renovacao)) {
-                        erro = "Não foi possível guardar o acesso com segurança neste aparelho."
+                        erro = tr("Não foi possível guardar o acesso com segurança neste aparelho.")
                         return@launch
                     }
                 } else if (!c.auth.temRenovacao(nova.email)) {
-                    erro = "O Google não enviou o token de renovação. Tente entrar de novo."
+                    erro = tr("O Google não enviou o token de renovação. Tente entrar de novo.")
                     return@launch
                 }
                 c.auth.remember(nova.email, accessToken, validoMs)
@@ -1420,7 +1429,7 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                erro = e.message ?: "Falha ao identificar a conta."
+                erro = e.message ?: tr("Falha ao identificar a conta.")
             }
         }
     }
