@@ -1,5 +1,6 @@
 package com.nekodrive.app.ui
 
+import com.nekodrive.app.data.tr
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -40,33 +41,31 @@ fun ConfigurarGoogleDialog(onFechar: () -> Unit, onSalvo: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = onFechar,
-        title = { Text("ID do cliente do Google") },
+        title = { Text(tr("ID do cliente do Google")) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "Para entrar no seu Drive, o app usa um cliente OAuth do seu próprio Google Cloud (grátis). " +
-                        "Os nomes dos menus do Google mudam de vez em quando.",
+                    tr("Para entrar no seu Drive, o app usa um cliente OAuth do seu próprio Google Cloud (grátis). ") +
+                        tr("Os nomes dos menus do Google mudam de vez em quando."),
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Text(
-                    "1. Crie um projeto no Google Cloud e ative a Google Drive API.\n" +
-                        "2. Em Google Auth Platform, configure a tela de consentimento (Externo), adicione o escopo " +
-                        "https://www.googleapis.com/auth/drive e publique como \"Em produção\".\n" +
-                        "3. Crie um cliente OAuth do tipo Android com o pacote e o SHA-1 abaixo, e ligue " +
-                        "\"Ativar esquema de URI personalizado\" nas configurações avançadas.\n" +
-                        "4. Cole aqui o ID do cliente.",
+                    tr("1. Crie um projeto no Google Cloud e ative a Google Drive API.") + "\n" +
+                        tr("2. Em Google Auth Platform, configure a tela de consentimento (Externo), adicione o escopo %s e publique como “Em produção”.", "https://www.googleapis.com/auth/drive") + "\n" +
+                        tr("3. Crie um cliente OAuth do tipo Android com o pacote e o SHA-1 abaixo, e ligue “Ativar esquema de URI personalizado” nas configurações avançadas.") + "\n" +
+                        tr("4. Cole aqui o ID do cliente."),
                     style = MaterialTheme.typography.bodySmall,
                 )
-                LinhaCopiavel(context, "Pacote", OAuthConfig.PACOTE)
-                LinhaCopiavel(context, "SHA-1 deste app", sha1 ?: "não foi possível ler")
+                LinhaCopiavel(context, tr("Pacote"), OAuthConfig.PACOTE)
+                LinhaCopiavel(context, tr("SHA-1 deste app"), sha1 ?: tr("não foi possível ler"))
                 OutlinedTextField(
                     value = id,
                     onValueChange = { id = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("ID do cliente") },
+                    label = { Text(tr("ID do cliente")) },
                     placeholder = { Text("123456-abc.apps.googleusercontent.com") },
                     supportingText = {
-                        if (id.isNotBlank() && !valido) Text("O ID termina em .apps.googleusercontent.com")
+                        if (id.isNotBlank() && !valido) Text(tr("O ID termina em .apps.googleusercontent.com"))
                     },
                     isError = id.isNotBlank() && !valido,
                 )
@@ -77,7 +76,7 @@ fun ConfigurarGoogleDialog(onFechar: () -> Unit, onSalvo: () -> Unit) {
                                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                         )
                     }
-                }) { Text("Abrir o Google Cloud") }
+                }) { Text(tr("Abrir o Google Cloud")) }
             }
         },
         confirmButton = {
@@ -87,9 +86,9 @@ fun ConfigurarGoogleDialog(onFechar: () -> Unit, onSalvo: () -> Unit) {
                     OAuthConfig.definir(context, id)
                     onSalvo()
                 },
-            ) { Text("Salvar") }
+            ) { Text(tr("Salvar")) }
         },
-        dismissButton = { TextButton(onClick = onFechar) { Text("Cancelar") } },
+        dismissButton = { TextButton(onClick = onFechar) { Text(tr("Cancelar")) } },
     )
 }
 
@@ -103,6 +102,6 @@ private fun LinhaCopiavel(context: Context, rotulo: String, valor: String) {
         TextButton(onClick = {
             val gestor = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
             gestor?.setPrimaryClip(ClipData.newPlainText(rotulo, valor))
-        }) { Text("Copiar") }
+        }) { Text(tr("Copiar")) }
     }
 }
