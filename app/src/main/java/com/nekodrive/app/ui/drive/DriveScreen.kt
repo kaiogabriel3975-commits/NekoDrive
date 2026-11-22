@@ -1,5 +1,6 @@
 package com.nekodrive.app.ui.drive
 
+import com.nekodrive.app.data.tr
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -413,14 +414,14 @@ fun DriveScreen(
                     CircularProgressIndicator(Modifier.padding(start = 10.dp).size(18.dp), strokeWidth = 2.dp)
                     Text(texto, Modifier.weight(1f, fill = false).padding(horizontal = 10.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall, maxLines = 1)
                     IconButton(onClick = { vm.cancelarOperacao() }, modifier = Modifier.size(36.dp)) {
-                        Icon(Icons.Rounded.Close, "Cancelar", modifier = Modifier.size(18.dp))
+                        Icon(Icons.Rounded.Close, tr("Cancelar"), modifier = Modifier.size(18.dp))
                     }
                 }
             }
             vm.erro?.let { msg ->
                 PilulaVidro(Modifier.padding(horizontal = 12.dp)) {
                     Text(msg, Modifier.padding(start = 10.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                    TextButton(onClick = { vm.recarregar() }) { Text("Tentar de novo") }
+                    TextButton(onClick = { vm.recarregar() }) { Text(tr("Tentar de novo")) }
                 }
             }
         }
@@ -435,14 +436,14 @@ fun DriveScreen(
             val cor = MaterialTheme.colorScheme.onSurface
             if (vm.selecionados.isNotEmpty()) {
                 val unico = if (vm.selecionados.size == 1) vm.itens.firstOrNull { it.id in vm.selecionados } else null
-                ItemMenuVidro("Mover para…", { menuHamburguer = false; vm.abrirSeletorDestino(false) }, cor = cor, icone = Icons.Rounded.DriveFileMove)
-                ItemMenuVidro("Copiar para…", { menuHamburguer = false; vm.abrirSeletorDestino(true) }, cor = cor, icone = Icons.Rounded.ContentCopy)
+                ItemMenuVidro(tr("Mover para…"), { menuHamburguer = false; vm.abrirSeletorDestino(false) }, cor = cor, icone = Icons.Rounded.DriveFileMove)
+                ItemMenuVidro(tr("Copiar para…"), { menuHamburguer = false; vm.abrirSeletorDestino(true) }, cor = cor, icone = Icons.Rounded.ContentCopy)
                 if (unico != null) {
-                    ItemMenuVidro("Renomear", { menuHamburguer = false; renomear = unico }, cor = cor, icone = Icons.Rounded.Edit)
+                    ItemMenuVidro(tr("Renomear"), { menuHamburguer = false; renomear = unico }, cor = cor, icone = Icons.Rounded.Edit)
                 }
             }
-            ItemMenuVidro("Criar pasta", { menuHamburguer = false; novaPasta = true }, cor = cor, icone = Icons.Rounded.CreateNewFolder)
-            ItemMenuVidro("Enviar arquivos", { menuHamburguer = false; escolherArquivos.launch("*/*") }, cor = cor, icone = Icons.Rounded.UploadFile)
+            ItemMenuVidro(tr("Criar pasta"), { menuHamburguer = false; novaPasta = true }, cor = cor, icone = Icons.Rounded.CreateNewFolder)
+            ItemMenuVidro(tr("Enviar arquivos"), { menuHamburguer = false; escolherArquivos.launch("*/*") }, cor = cor, icone = Icons.Rounded.UploadFile)
         }
         MenuVidro(
             aberto = menuOrdem,
@@ -453,7 +454,7 @@ fun DriveScreen(
             CampoOrdem.entries.forEach { campo ->
                 val seta = if (campo == vm.campo) (if (vm.crescente) "  ↑" else "  ↓") else ""
                 ItemMenuVidro(
-                    campo.rotulo + seta,
+                    tr(campo.rotulo) + seta,
                     { vm.definirOrdem(campo); menuOrdem = false },
                     cor = MaterialTheme.colorScheme.onSurface,
                 )
@@ -463,11 +464,11 @@ fun DriveScreen(
 
     if (novaPasta) {
         DialogRenomear(
-            nomeAtual = "Nova pasta",
+            nomeAtual = tr("Nova pasta"),
             aoConfirmar = { nome -> novaPasta = false; vm.criarPasta(nome) },
             aoCancelar = { novaPasta = false },
-            titulo = "Nova pasta",
-            rotuloConfirmar = "Criar",
+            titulo = tr("Nova pasta"),
+            rotuloConfirmar = tr("Criar"),
         )
     }
     if (vm.seletorDestino != null) SeletorDestino(vm)
@@ -483,15 +484,15 @@ fun DriveScreen(
     arquivoExterno?.let { f ->
         AlertDialog(
             onDismissRequest = { arquivoExterno = null },
-            title = { Text("Abrir com outro app?") },
-            text = { Text("O nekodrive não abre este tipo de arquivo. Dá para baixá-lo e abri-lo com outro app instalado no celular.") },
+            title = { Text(tr("Abrir com outro app?")) },
+            text = { Text(tr("O nekodrive não abre este tipo de arquivo. Dá para baixá-lo e abri-lo com outro app instalado no celular.")) },
             confirmButton = {
                 TextButton(onClick = {
                     arquivoExterno = null
                     escopoDrive.launch { abrirComOutroApp(ctxDrive, vm, f) }
-                }) { Text("Abrir com…") }
+                }) { Text(tr("Abrir com…")) }
             },
-            dismissButton = { TextButton(onClick = { arquivoExterno = null }) { Text("Cancelar") } },
+            dismissButton = { TextButton(onClick = { arquivoExterno = null }) { Text(tr("Cancelar")) } },
         )
     }
 
@@ -499,10 +500,10 @@ fun DriveScreen(
         val n = vm.selecionados.size
         AlertDialog(
             onDismissRequest = { confirmar = false },
-            title = { Text("Mover para a lixeira?") },
-            text = { Text("$n item(ns) vão para a lixeira do Drive. Dá para restaurar depois.") },
-            confirmButton = { TextButton(onClick = { confirmar = false; vm.moverParaLixeira() }) { Text("Mover") } },
-            dismissButton = { TextButton(onClick = { confirmar = false }) { Text("Cancelar") } },
+            title = { Text(tr("Mover para a lixeira?")) },
+            text = { Text(tr("%s item(ns) vão para a lixeira do Drive. Dá para restaurar depois.", n)) },
+            confirmButton = { TextButton(onClick = { confirmar = false; vm.moverParaLixeira() }) { Text(tr("Mover")) } },
+            dismissButton = { TextButton(onClick = { confirmar = false }) { Text(tr("Cancelar")) } },
         )
     }
 }
@@ -526,7 +527,7 @@ private fun Barra(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (vm.selecionados.isNotEmpty()) {
-            CirculoVidro(aoClicar = { vm.limparSelecao() }) { Icon(Icons.Rounded.Close, "Cancelar seleção", tint = cor) }
+            CirculoVidro(aoClicar = { vm.limparSelecao() }) { Icon(Icons.Rounded.Close, tr("Cancelar seleção"), tint = cor) }
             PilulaVidro {
                 // só o número: com mais botões na pílula ao lado, o texto "selecionado(s)" não caberia
                 Text(
@@ -539,11 +540,11 @@ private fun Barra(
             Spacer(Modifier.weight(1f))
             val unico = if (vm.selecionados.size == 1) vm.itens.firstOrNull { it.id in vm.selecionados } else null
             PilulaVidro {
-                BotaoVidro(Icons.Rounded.StarBorder, "Favoritar", { vm.favoritarSelecao(vm.itens) }, cor)
-                BotaoVidro(Icons.Rounded.Download, "Baixar", { vm.baixarSelecionados() }, cor)
-                if (unico != null && unico.isFolder) BotaoVidro(Icons.Rounded.AddPhotoAlternate, "Definir capa", { aoCapa(unico) }, cor)
-                BotaoVidro(Icons.Rounded.Delete, "Mover para a lixeira", aoExcluir, cor)
-                BotaoVidro(Icons.Rounded.Menu, "Mais ações: mover, copiar, renomear, criar pasta e enviar", aoMenu, cor)
+                BotaoVidro(Icons.Rounded.StarBorder, tr("Favoritar"), { vm.favoritarSelecao(vm.itens) }, cor)
+                BotaoVidro(Icons.Rounded.Download, tr("Baixar"), { vm.baixarSelecionados() }, cor)
+                if (unico != null && unico.isFolder) BotaoVidro(Icons.Rounded.AddPhotoAlternate, tr("Definir capa"), { aoCapa(unico) }, cor)
+                BotaoVidro(Icons.Rounded.Delete, tr("Mover para a lixeira"), aoExcluir, cor)
+                BotaoVidro(Icons.Rounded.Menu, tr("Mais ações: mover, copiar, renomear, criar pasta e enviar"), aoMenu, cor)
             }
         } else if (vm.buscando) {
             val foco = remember { FocusRequester() }
@@ -554,7 +555,7 @@ private fun Barra(
                     runCatching { foco.requestFocus() }
                 }
             }
-            CirculoVidro(aoClicar = { vm.sairDaBusca() }) { Icon(Icons.Rounded.Close, "Fechar busca", tint = cor) }
+            CirculoVidro(aoClicar = { vm.sairDaBusca() }) { Icon(Icons.Rounded.Close, tr("Fechar busca"), tint = cor) }
             // a barra de busca conta como toolbar para os reflexos
             val luzBusca = LocalLuz.current
             Box(
@@ -564,7 +565,7 @@ private fun Barra(
                 TextField(
                     value = vm.termo,
                     onValueChange = { vm.definirTermo(it) },
-                    placeholder = { Text("Buscar no Drive") },
+                    placeholder = { Text(tr("Buscar no Drive")) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().focusRequester(foco),
                     colors = TextFieldDefaults.colors(
@@ -577,18 +578,18 @@ private fun Barra(
             }
         } else {
             if (vm.pilha.size > 1) {
-                CirculoVidro(aoClicar = { if (!TempoGaleria.fechando) vm.voltar() }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Voltar", tint = cor) }
+                CirculoVidro(aoClicar = { if (!TempoGaleria.fechando) vm.voltar() }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, tr("Voltar"), tint = cor) }
             }
             Spacer(Modifier.weight(1f))
-            CirculoVidro(aoClicar = aoOrdem) { Icon(Icons.AutoMirrored.Rounded.Sort, "Ordenar", tint = cor) }
+            CirculoVidro(aoClicar = aoOrdem) { Icon(Icons.AutoMirrored.Rounded.Sort, tr("Ordenar"), tint = cor) }
             CirculoVidro(aoClicar = { vm.alternarModo() }) {
                 Icon(
                     if (vm.grade) Icons.AutoMirrored.Rounded.ViewList else Icons.Rounded.GridView,
-                    "Alternar entre grade e lista",
+                    tr("Alternar entre grade e lista"),
                     tint = cor,
                 )
             }
-            CirculoVidro(aoClicar = aoMenu) { Icon(Icons.Rounded.Menu, "Criar pasta e enviar arquivos", tint = cor) }
+            CirculoVidro(aoClicar = aoMenu) { Icon(Icons.Rounded.Menu, tr("Criar pasta e enviar arquivos"), tint = cor) }
         }
     }
 }
@@ -615,9 +616,9 @@ private fun PaginaPasta(
     if (atual) SideEffect { ultima.value = vm.itens }
     val lista = if (atual) vm.itens else ultima.value
     val nomePasta = remember {
-        mutableStateOf(if (atual && !vm.buscando) vm.pilha.last().nome else "")
+        mutableStateOf(if (atual && !vm.buscando) vm.pilha.last().titulo else "")
     }
-    if (atual && !vm.buscando) SideEffect { nomePasta.value = vm.pilha.last().nome }
+    if (atual && !vm.buscando) SideEffect { nomePasta.value = vm.pilha.last().titulo }
 
     // A tela da pasta nasce com o formato e a cor do card e vai virando tela cheia (e o contrário ao fechar)
     val tema = MaterialTheme.colorScheme
@@ -741,9 +742,9 @@ private fun PaginaPasta(
                     CircularProgressIndicator(Modifier.align(Alignment.Center))
                 } else if (!vm.carregando && lista.isEmpty() && vm.erro == null) {
                     val msg = when {
-                        !vm.buscando -> "Pasta vazia"
-                        vm.termo.isBlank() -> "Digite para buscar no Drive"
-                        else -> "Nada encontrado"
+                        !vm.buscando -> tr("Pasta vazia")
+                        vm.termo.isBlank() -> tr("Digite para buscar no Drive")
+                        else -> tr("Nada encontrado")
                     }
                     Text(msg, Modifier.align(Alignment.Center))
                 }
@@ -887,10 +888,10 @@ private fun Miniatura(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (capaDePasta) Indicador(Icons.Rounded.Folder, "Pasta")
-                if (estado.noCache && !comProgresso) Indicador(Icons.Rounded.DownloadDone, "Salvo no cache")
-                if (estado.favorito) Indicador(Icons.Rounded.Star, "Favorito", Color(0xFFFFC107))
-                if (f.publico) Indicador(Icons.Rounded.Link, "Qualquer pessoa com o link pode abrir")
+                if (capaDePasta) Indicador(Icons.Rounded.Folder, tr("Pasta"))
+                if (estado.noCache && !comProgresso) Indicador(Icons.Rounded.DownloadDone, tr("Salvo no cache"))
+                if (estado.favorito) Indicador(Icons.Rounded.Star, tr("Favorito"), Color(0xFFFFC107))
+                if (f.publico) Indicador(Icons.Rounded.Link, tr("Qualquer pessoa com o link pode abrir"))
             }
         }
         // download em andamento: botão de cancelar com blur no centro e o progresso em anel ao redor dele
@@ -925,11 +926,11 @@ private fun BotaoCancelarDownload(progresso: Float, haze: HazeState?, aoCancelar
                         if (haze != null) Modifier.hazeEffect(state = haze, style = EstiloBotaoCancelar) { blurEnabled = true }
                         else Modifier.background(Color.Black.copy(alpha = 0.6f)),
                     )
-                    .then(if (aoCancelar != null) Modifier.clickable(onClickLabel = "Cancelar download", onClick = aoCancelar) else Modifier),
+                    .then(if (aoCancelar != null) Modifier.clickable(onClickLabel = tr("Cancelar download"), onClick = aoCancelar) else Modifier),
                 contentAlignment = Alignment.Center,
             ) {
                 if (aoCancelar != null) {
-                    Icon(Icons.Rounded.Close, "Cancelar download", tint = Color.White, modifier = Modifier.size(lado * 0.5f))
+                    Icon(Icons.Rounded.Close, tr("Cancelar download"), tint = Color.White, modifier = Modifier.size(lado * 0.5f))
                 }
             }
         }
@@ -1103,7 +1104,7 @@ internal fun ItemGrade(
                 )
                 if (selecionado) {
                     Icon(
-                        Icons.Rounded.CheckCircle, contentDescription = "Selecionado",
+                        Icons.Rounded.CheckCircle, contentDescription = tr("Selecionado"),
                         tint = tema.primary,
                         modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(24.dp),
                     )
@@ -1185,7 +1186,7 @@ internal fun ItemLinha(
             }
         }
         if (selecionado) {
-            Icon(Icons.Rounded.CheckCircle, "Selecionado", tint = MaterialTheme.colorScheme.primary)
+            Icon(Icons.Rounded.CheckCircle, tr("Selecionado"), tint = MaterialTheme.colorScheme.primary)
         }
     }
     }
@@ -1199,13 +1200,13 @@ private fun SemConta(erro: String?, onEntrar: () -> Unit, modifier: Modifier) {
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            "Entre com sua conta do Google para ver seus vídeos e fotos.",
+            tr("Entre com sua conta do Google para ver seus vídeos e fotos."),
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.bodyLarge,
         )
         erro?.let {
             Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 12.dp), textAlign = TextAlign.Center)
         }
-        Button(onClick = onEntrar, modifier = Modifier.padding(top = 20.dp)) { Text("Entrar com Google") }
+        Button(onClick = onEntrar, modifier = Modifier.padding(top = 20.dp)) { Text(tr("Entrar com Google")) }
     }
 }
