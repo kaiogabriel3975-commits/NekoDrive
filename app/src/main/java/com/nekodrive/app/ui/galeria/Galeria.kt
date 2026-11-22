@@ -1,5 +1,6 @@
 package com.nekodrive.app.ui.galeria
 
+import com.nekodrive.app.data.tr
 import android.Manifest
 import android.app.PictureInPictureParams
 import android.content.pm.PackageManager
@@ -475,9 +476,9 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                 val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", arquivo)
                 val area = ctx.getSystemService(ClipboardManager::class.java)
                 area.setPrimaryClip(ClipData.newUri(ctx.contentResolver, atual.name, uri))
-                Toast.makeText(ctx, "Imagem copiada", Toast.LENGTH_SHORT).show()
+                Toast.makeText(ctx, tr("Imagem copiada"), Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
-                Toast.makeText(ctx, "Não foi possível copiar: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(ctx, tr("Não foi possível copiar: %s", e.message), Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -590,7 +591,7 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                 Dissolver(mostrarFoto, Modifier.align(Alignment.TopCenter)) {
                     Box(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp)) {
                         CirculoVidro(aoClicar = { fechar() }, modifier = Modifier.align(Alignment.CenterStart)) {
-                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Voltar", tint = Color.White)
+                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, tr("Voltar"), tint = Color.White)
                         }
                         NomeUmaLinha(
                             atual.name,
@@ -604,21 +605,21 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                 Dissolver(mostrarFoto, Modifier.align(Alignment.BottomCenter)) {
                     PilulaVidro(Modifier.navigationBarsPadding().padding(bottom = 16.dp), toolbar = true) {
                         // GIFs não têm botão de copiar
-                        if (!ehGif) BotaoVidro(Icons.Rounded.ContentCopy, "Copiar imagem", copiar)
-                        BotaoVidro(Icons.Rounded.Share, "Compartilhar", compartilhar)
+                        if (!ehGif) BotaoVidro(Icons.Rounded.ContentCopy, tr("Copiar imagem"), copiar)
+                        BotaoVidro(Icons.Rounded.Share, tr("Compartilhar"), compartilhar)
                         BotaoVidro(
                             if (estadoAtual.noCache) Icons.Rounded.DownloadDone else Icons.Rounded.Download,
-                            if (estadoAtual.noCache) "Salvo no cache" else "Baixar",
+                            if (estadoAtual.noCache) tr("Salvo no cache") else tr("Baixar"),
                             { vm.baixar(atual) },
                         )
                         BotaoVidro(
                             if (estadoAtual.favorito) Icons.Rounded.Star else Icons.Rounded.StarBorder,
-                            if (estadoAtual.favorito) "Remover dos favoritos" else "Favoritar",
+                            if (estadoAtual.favorito) tr("Remover dos favoritos") else tr("Favoritar"),
                             { vm.alternarFavorito(atual) },
                             if (estadoAtual.favorito) Color(0xFFFFC107) else Color.White,
                         )
-                        BotaoVidro(Icons.Rounded.Info, "Informações", { vm.abrirDetalhes(atual) })
-                        BotaoVidro(Icons.Rounded.Delete, "Mover para a lixeira", { confirmarExclusao = true })
+                        BotaoVidro(Icons.Rounded.Info, tr("Informações"), { vm.abrirDetalhes(atual) })
+                        BotaoVidro(Icons.Rounded.Delete, tr("Mover para a lixeira"), { confirmarExclusao = true })
                     }
                 }
 
@@ -631,7 +632,7 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                         CirculoVidro(
                             aoClicar = { fechar() },
                             modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(12.dp),
-                        ) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Voltar", tint = Color.White) }
+                        ) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, tr("Voltar"), tint = Color.White) }
                         NomeUmaLinha(
                             atual.name,
                             Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(start = 72.dp, end = 72.dp, top = 24.dp),
@@ -649,7 +650,7 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                                 CirculoVidro(aoClicar = { c.alternar() }) {
                                     Icon(
                                         if (c.tocando) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                        if (c.tocando) "Pausar" else "Reproduzir",
+                                        if (c.tocando) tr("Pausar") else tr("Reproduzir"),
                                         tint = Color.White,
                                     )
                                 }
@@ -674,21 +675,21 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                                     paisagem = !paisagem
                                     activity?.requestedOrientation = if (paisagem) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                                     else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                                }) { Icon(Icons.Rounded.ScreenRotation, "Girar a tela", tint = Color.White) }
+                                }) { Icon(Icons.Rounded.ScreenRotation, tr("Girar a tela"), tint = Color.White) }
                             }
 
                             Box(Modifier.fillMaxWidth()) {
                                 PilulaVidro(Modifier.align(Alignment.Center), toolbar = true) {
                                     BotaoVidro(
                                         if (estadoAtual.favorito) Icons.Rounded.Star else Icons.Rounded.StarBorder,
-                                        if (estadoAtual.favorito) "Remover dos favoritos" else "Favoritar",
+                                        if (estadoAtual.favorito) tr("Remover dos favoritos") else tr("Favoritar"),
                                         { vm.alternarFavorito(atual) },
                                         if (estadoAtual.favorito) Color(0xFFFFC107) else Color.White,
                                     )
-                                    BotaoVidro(Icons.Rounded.Share, "Compartilhar", compartilhar)
+                                    BotaoVidro(Icons.Rounded.Share, tr("Compartilhar"), compartilhar)
                                     BotaoVidro(
                                         if (estadoAtual.noCache) Icons.Rounded.DownloadDone else Icons.Rounded.Download,
-                                        if (estadoAtual.noCache) "Salvo no cache" else "Baixar",
+                                        if (estadoAtual.noCache) tr("Salvo no cache") else tr("Baixar"),
                                         { vm.baixar(atual) },
                                     )
                                     // aparelhos sem Picture-in-Picture (alguns Android Go) não mostram o botão
@@ -704,14 +705,14 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                                             // PiP desativado para o app nas configurações do Android: avisa em vez de não fazer nada
                                             if (!entrou) {
                                                 android.widget.Toast.makeText(
-                                                    activity, "Picture-in-Picture indisponível", android.widget.Toast.LENGTH_SHORT,
+                                                    activity, tr("Picture-in-Picture indisponível"), android.widget.Toast.LENGTH_SHORT,
                                                 ).show()
                                             }
                                         })
                                     }
-                                    BotaoVidro(Icons.Rounded.Delete, "Mover para a lixeira", { confirmarExclusao = true })
+                                    BotaoVidro(Icons.Rounded.Delete, tr("Mover para a lixeira"), { confirmarExclusao = true })
                                     // Três pontos: o menu em si é desenhado com blur mais abaixo
-                                    BotaoVidro(Icons.Rounded.MoreVert, "Mais opções", { menu = 1 })
+                                    BotaoVidro(Icons.Rounded.MoreVert, tr("Mais opções"), { menu = 1 })
                                 }
                             }
                         }
@@ -730,31 +731,31 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                         when (menu) {
                             1 -> {
                                 ItemMenuVidro("Velocidade", { menu = 2 })
-                                if (c.qualidades.size > 1) ItemMenuVidro("Resolução", { menu = 4 })
-                                ItemMenuVidro("Transmitir para a TV", {
+                                if (c.qualidades.size > 1) ItemMenuVidro(tr("Resolução"), { menu = 4 })
+                                ItemMenuVidro(tr("Transmitir para a TV"), {
                                     menu = 0
                                     if (activity is FragmentActivity) c.cast.escolherDispositivo(activity)
                                 })
                                 ItemMenuVidro("Legendas", { menu = 3 })
-                                ItemMenuVidro("Informações", { menu = 0; vm.abrirDetalhes(atual, c.extrasInfo()) })
-                                ItemMenuVidro("Abrir em outro player", { menu = 0; abrirPlayerExterno(ctx, vm, atual) })
+                                ItemMenuVidro(tr("Informações"), { menu = 0; vm.abrirDetalhes(atual, c.extrasInfo()) })
+                                ItemMenuVidro(tr("Abrir em outro player"), { menu = 0; abrirPlayerExterno(ctx, vm, atual) })
                             }
                             2 -> {
-                                ItemMenuVidro("Voltar", { menu = 1 }, icone = Icons.AutoMirrored.Rounded.ArrowBack)
+                                ItemMenuVidro(tr("Voltar"), { menu = 1 }, icone = Icons.AutoMirrored.Rounded.ArrowBack)
                                 VELOCIDADES.forEach { v ->
                                     ItemMenuVidro("${v}x", { c.definirVelocidade(v); menu = 0 }, marcado = v == c.velocidade)
                                 }
                             }
                             3 -> {
-                                ItemMenuVidro("Voltar", { menu = 1 }, icone = Icons.AutoMirrored.Rounded.ArrowBack)
-                                ItemMenuVidro("Sem legenda", { c.escolherLegenda(null); menu = 0 }, marcado = c.faixas.none { it.grupo.isSelected })
+                                ItemMenuVidro(tr("Voltar"), { menu = 1 }, icone = Icons.AutoMirrored.Rounded.ArrowBack)
+                                ItemMenuVidro(tr("Sem legenda"), { c.escolherLegenda(null); menu = 0 }, marcado = c.faixas.none { it.grupo.isSelected })
                                 c.faixas.forEach { fx ->
                                     ItemMenuVidro(fx.rotulo, { c.escolherLegenda(fx); menu = 0 }, marcado = fx.grupo.isSelected)
                                 }
                             }
                             4 -> {
-                                ItemMenuVidro("Voltar", { menu = 1 }, icone = Icons.AutoMirrored.Rounded.ArrowBack)
-                                ItemMenuVidro("Automática", { c.escolherQualidade(null); menu = 0 }, marcado = c.qualidadeAutomatica)
+                                ItemMenuVidro(tr("Voltar"), { menu = 1 }, icone = Icons.AutoMirrored.Rounded.ArrowBack)
+                                ItemMenuVidro(tr("Automática"), { c.escolherQualidade(null); menu = 0 }, marcado = c.qualidadeAutomatica)
                                 c.qualidades.forEach { q ->
                                     ItemMenuVidro(
                                         q.rotulo,
@@ -809,17 +810,17 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
                         Modifier.align(Alignment.Center).padding(32.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Text("Não foi possível reproduzir este vídeo.", color = Color.White, textAlign = TextAlign.Center)
+                        Text(tr("Não foi possível reproduzir este vídeo."), color = Color.White, textAlign = TextAlign.Center)
                         Text(
                             msgErro, color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.bodySmall,
                             textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp),
                         )
                         Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { ctrl.tentarNovamente() }) { Text("Tentar de novo") }
-                            if (!ctrl.convertida) TextButton(onClick = { ctrl.tentarConvertida() }) { Text("Versão convertida") }
+                            Button(onClick = { ctrl.tentarNovamente() }) { Text(tr("Tentar de novo")) }
+                            if (!ctrl.convertida) TextButton(onClick = { ctrl.tentarConvertida() }) { Text(tr("Versão convertida")) }
                         }
-                        TextButton(onClick = { abrirPlayerExterno(ctx, vm, atual) }) { Text("Abrir em outro player") }
-                        TextButton(onClick = { scope.launch { abrirComOutroApp(ctx, vm, atual) } }) { Text("Baixar e abrir em outro app") }
+                        TextButton(onClick = { abrirPlayerExterno(ctx, vm, atual) }) { Text(tr("Abrir em outro player")) }
+                        TextButton(onClick = { scope.launch { abrirComOutroApp(ctx, vm, atual) } }) { Text(tr("Baixar e abrir em outro app")) }
                     }
                 }
 
@@ -833,12 +834,12 @@ fun Galeria(vm: DriveViewModel, dados: FotosAbertas, st: SharedTransitionScope, 
     if (confirmarExclusao) {
         AlertDialog(
             onDismissRequest = { confirmarExclusao = false },
-            title = { Text("Mover para a lixeira?") },
-            text = { Text("“${atual.name}” vai para a lixeira do Drive. Dá para restaurar depois.") },
+            title = { Text(tr("Mover para a lixeira?")) },
+            text = { Text(tr("“%s” vai para a lixeira do Drive. Dá para restaurar depois.", atual.name)) },
             confirmButton = {
-                TextButton(onClick = { confirmarExclusao = false; vm.excluirDaGaleria(atual) }) { Text("Mover") }
+                TextButton(onClick = { confirmarExclusao = false; vm.excluirDaGaleria(atual) }) { Text(tr("Mover")) }
             },
-            dismissButton = { TextButton(onClick = { confirmarExclusao = false }) { Text("Cancelar") } },
+            dismissButton = { TextButton(onClick = { confirmarExclusao = false }) { Text(tr("Cancelar")) } },
         )
     }
 }
@@ -1244,7 +1245,7 @@ private fun TelaTransmissao(cast: CastControle, onVoltar: () -> Unit) {
             .pointerInput(Unit) { detectTapGestures { } }, // impede toques de chegarem ao player escondido
     ) {
         CirculoVidro(aoClicar = onVoltar, modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(12.dp)) {
-            Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Voltar", tint = Color.White)
+            Icon(Icons.AutoMirrored.Rounded.ArrowBack, tr("Voltar"), tint = Color.White)
         }
         Column(
             Modifier.align(Alignment.Center).padding(24.dp),
@@ -1253,7 +1254,7 @@ private fun TelaTransmissao(cast: CastControle, onVoltar: () -> Unit) {
         ) {
             Icon(Icons.Rounded.Cast, null, tint = Color.White, modifier = Modifier.size(48.dp))
             Text(
-                "Transmitindo para " + cast.dispositivo.ifEmpty { "a TV" },
+                tr("Transmitindo para ") + cast.dispositivo.ifEmpty { "a TV" },
                 color = Color.White, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center,
             )
             Slider(
@@ -1268,7 +1269,7 @@ private fun TelaTransmissao(cast: CastControle, onVoltar: () -> Unit) {
             }
             Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { cast.pular(-10_000L) }, modifier = Modifier.size(56.dp)) {
-                    Icon(Icons.Rounded.Replay10, "Voltar 10 segundos", tint = Color.White, modifier = Modifier.size(36.dp))
+                    Icon(Icons.Rounded.Replay10, tr("Voltar 10 segundos"), tint = Color.White, modifier = Modifier.size(36.dp))
                 }
                 IconButton(
                     onClick = { cast.alternar() },
@@ -1276,15 +1277,15 @@ private fun TelaTransmissao(cast: CastControle, onVoltar: () -> Unit) {
                 ) {
                     Icon(
                         if (cast.tocando) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        if (cast.tocando) "Pausar" else "Reproduzir",
+                        if (cast.tocando) tr("Pausar") else tr("Reproduzir"),
                         tint = Color.White, modifier = Modifier.size(44.dp),
                     )
                 }
                 IconButton(onClick = { cast.pular(10_000L) }, modifier = Modifier.size(56.dp)) {
-                    Icon(Icons.Rounded.Forward10, "Avançar 10 segundos", tint = Color.White, modifier = Modifier.size(36.dp))
+                    Icon(Icons.Rounded.Forward10, tr("Avançar 10 segundos"), tint = Color.White, modifier = Modifier.size(36.dp))
                 }
             }
-            TextButton(onClick = { cast.parar(encerrarSessao = true) }) { Text("Parar transmissão") }
+            TextButton(onClick = { cast.parar(encerrarSessao = true) }) { Text(tr("Parar transmissão")) }
         }
     }
 }
