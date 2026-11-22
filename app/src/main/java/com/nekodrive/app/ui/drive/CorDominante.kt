@@ -8,16 +8,28 @@ import androidx.compose.ui.graphics.Color
 import coil.request.ImageRequest
 import coil.request.repeatCount
 
+/** Mapa com limite: ao passar de [maximo] entradas descarta a usada há mais tempo. Seguro entre threads. */
+private class MapaLimitado<K, V>(private val maximo: Int) {
+    private val mapa = object : LinkedHashMap<K, V>(256, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<K, V>?): Boolean = size > maximo
+    }
+
+    @Synchronized fun obter(chave: K): V? = mapa[chave]
+    @Synchronized fun guardar(chave: K, valor: V) { mapa[chave] = valor }
+}
+
+private const val LIMITE_MAPAS = 4000
+
 /** Cor mais frequente de cada miniatura, guardada para não recalcular ao rolar a lista. */
 object CoresMidia {
-    private val mapa = HashMap<String, Color>()
-    private val fortes = HashMap<String, Color>()
-    fun obter(id: String): Color? = mapa[id]
-    fun guardar(id: String, cor: Color) { mapa[id] = cor }
+    private val mapa = MapaLimitado<String, Color>(LIMITE_MAPAS)
+    private val fortes = MapaLimitado<String, Color>(LIMITE_MAPAS)
+    fun obter(id: String): Color? = mapa.obter(id)
+    fun guardar(id: String, cor: Color) { mapa.guardar(id, cor) }
 
     /** Cor mais forte (viva e clara) da miniatura, usada no núcleo dos reflexos de vidro. */
-    fun obterForte(id: String): Color? = fortes[id]
-    fun guardarForte(id: String, cor: Color) { fortes[id] = cor }
+    fun obterForte(id: String): Color? = fortes.obter(id)
+    fun guardarForte(id: String, cor: Color) { fortes.guardar(id, cor) }
 }
 
 /** As duas cores que definem o clima de uma imagem: a que mais aparece e a mais forte. */
@@ -25,12 +37,12 @@ class CoresImagem(val dominante: Color, val forte: Color)
 
 /** Proporção (largura/altura) de cada miniatura já carregada: a galeria usa para abrir direto no formato certo. */
 object ProporcoesMidia {
-    private val mapa = HashMap<String, Float>()
-    fun obter(id: String): Float? = mapa[id]
+    private val mapa = MapaLimitado<String, Float>(LIMITE_MAPAS)
+    fun obter(id: String): Float? = mapa.obter(id)
     fun guardar(id: String, drawable: Drawable) {
         val w = drawable.intrinsicWidth
         val h = drawable.intrinsicHeight
-        if (w > 0 && h > 0) mapa[id] = w.toFloat() / h.toFloat()
+        if (w > 0 && h > 0) mapa.guardar(id, w.toFloat() / h.toFloat())
     }
 }
 
