@@ -1,5 +1,6 @@
 package com.nekodrive.app.ui.galeria
 
+import com.nekodrive.app.data.tr
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -49,7 +50,7 @@ fun InfoSheet(vm: DriveViewModel) {
                         if (arquivo != null) {
                             TextButton(onClick = { renomear = true }) {
                                 Icon(Icons.Rounded.Edit, null, Modifier.size(18.dp))
-                                Text("Renomear", Modifier.padding(start = 6.dp))
+                                Text(tr("Renomear"), Modifier.padding(start = 6.dp))
                             }
                         }
                     }
