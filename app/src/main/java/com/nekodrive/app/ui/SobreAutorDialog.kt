@@ -1,5 +1,6 @@
 package com.nekodrive.app.ui
 
+import com.nekodrive.app.data.tr
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -44,7 +45,7 @@ fun SobreAutorDialog(onFechar: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = onFechar,
-        title = { Text("Sobre o autor") },
+        title = { Text(tr("Sobre o autor")) },
         text = {
             Column(
                 Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
@@ -59,7 +60,7 @@ fun SobreAutorDialog(onFechar: () -> Unit) {
                 )
                 Text(Autor.NOME, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
                 Text(
-                    "Criador do NekoDrive, sob licença Apache 2.0.",
+                    tr("Criador do NekoDrive, sob licença Apache 2.0."),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -70,7 +71,7 @@ fun SobreAutorDialog(onFechar: () -> Unit) {
                             Intent(Intent.ACTION_VIEW, Uri.parse(Autor.GITHUB)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                         )
                     }
-                }) { Text("Abrir o GitHub") }
+                }) { Text(tr("Abrir o GitHub")) }
                 TextButton(onClick = {
                     runCatching {
                         context.startActivity(
@@ -81,14 +82,14 @@ fun SobreAutorDialog(onFechar: () -> Unit) {
 
                 if (Autor.CARTEIRA.isNotBlank()) {
                     Text(
-                        "Gostou do app? Você pode apoiar o projeto (${Autor.REDE}):",
+                        tr("Gostou do app? Você pode apoiar o projeto (%s):", Autor.REDE),
                         style = MaterialTheme.typography.bodySmall,
                         textAlign = TextAlign.Center,
                     )
                     // sem suavização: o QR code precisa de bordas nítidas para ser lido
                     Image(
                         bitmap = ImageBitmap.imageResource(R.drawable.qr_carteira),
-                        contentDescription = "QR code da carteira ${Autor.REDE}",
+                        contentDescription = tr("QR code da carteira %s", Autor.REDE),
                         modifier = Modifier.size(208.dp),
                         filterQuality = FilterQuality.None,
                     )
@@ -102,10 +103,10 @@ fun SobreAutorDialog(onFechar: () -> Unit) {
                         val gestor = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
                         gestor?.setPrimaryClip(ClipData.newPlainText(Autor.REDE, Autor.CARTEIRA))
                         copiado = true
-                    }) { Text(if (copiado) "Endereço copiado" else "Copiar endereço") }
+                    }) { Text(if (copiado) tr("Endereço copiado") else tr("Copiar endereço")) }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onFechar) { Text("Fechar") } },
+        confirmButton = { TextButton(onClick = onFechar) { Text(tr("Fechar")) } },
     )
 }
