@@ -1,5 +1,6 @@
 package com.nekodrive.app.ui.drive
 
+import com.nekodrive.app.data.tr
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -46,9 +47,9 @@ fun SeletorCapa(vm: DriveViewModel) {
     val ctx = LocalContext.current
     ModalBottomSheet(onDismissRequest = { vm.fecharSeletorCapa() }) {
         Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
-            Text("Capa de “${pasta.name}”", style = MaterialTheme.typography.titleMedium)
+            Text(tr("Capa de “%s”", pasta.name), style = MaterialTheme.typography.titleMedium)
             if (vm.capaDe(pasta.id) != null) {
-                TextButton(onClick = { vm.escolherCapa(null) }) { Text("Remover capa") }
+                TextButton(onClick = { vm.escolherCapa(null) }) { Text(tr("Remover capa")) }
             }
             val lista = vm.imagensCapa
             when {
@@ -56,7 +57,7 @@ fun SeletorCapa(vm: DriveViewModel) {
                     CircularProgressIndicator()
                 }
                 lista.isEmpty() -> Text(
-                    "Esta pasta não tem fotos nem vídeos.",
+                    tr("Esta pasta não tem fotos nem vídeos."),
                     Modifier.padding(vertical = 24.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -76,7 +77,7 @@ fun SeletorCapa(vm: DriveViewModel) {
                             AsyncImage(pedido, foto.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                             if (foto.isVideo) {
                                 Icon(
-                                    Icons.Rounded.PlayArrow, "Vídeo", tint = Color.White,
+                                    Icons.Rounded.PlayArrow, tr("Vídeo"), tint = Color.White,
                                     modifier = Modifier.align(Alignment.BottomStart).padding(4.dp)
                                         .background(Color.Black.copy(alpha = 0.55f), CircleShape).padding(3.dp).size(16.dp),
                                 )
