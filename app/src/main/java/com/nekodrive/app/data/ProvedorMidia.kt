@@ -42,7 +42,7 @@ class ProvedorMidia : ContentProvider() {
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
         val id = uri.pathSegments.getOrNull(1) ?: throw FileNotFoundException("Arquivo desconhecido")
         val c = (context!!.applicationContext as NekoDriveApplication).container
-        val email = c.accounts.currentEmail ?: throw FileNotFoundException("Nenhuma conta selecionada")
+        val email = c.accounts.currentEmail ?: throw FileNotFoundException(tr("Nenhuma conta selecionada"))
         val tamanho = uri.getQueryParameter("s")?.toLongOrNull()
         val local = if (tamanho != null) c.midia.arquivoLocal(email, DriveFile(id, "", "", tamanho, null, null)) else null
         if (local != null) return ParcelFileDescriptor.open(local, ParcelFileDescriptor.MODE_READ_ONLY)
@@ -56,7 +56,7 @@ class ProvedorMidia : ContentProvider() {
                 runBlocking { c.drive.baixarParaStream(email, id, saida) { } }
                 saida.close()
             } catch (e: Exception) {
-                runCatching { escrita.closeWithError(e.message ?: "Falha ao baixar") }
+                runCatching { escrita.closeWithError(e.message ?: tr("Falha ao baixar")) }
                 runCatching { saida.close() }
             }
         }.start()
