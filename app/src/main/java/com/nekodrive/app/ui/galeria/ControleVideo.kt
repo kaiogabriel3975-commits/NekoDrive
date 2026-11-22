@@ -1,5 +1,6 @@
 package com.nekodrive.app.ui.galeria
 
+import com.nekodrive.app.data.tr
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
@@ -166,7 +167,7 @@ class ControleVideo(
         override fun onTracksChanged(tracks: Tracks) {
             faixas = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }.mapIndexed { i, g ->
                 val f = g.getTrackFormat(0)
-                Faixa(f.label ?: f.language ?: "Legenda ${i + 1}", g)
+                Faixa(f.label ?: f.language ?: tr("Legenda %s", i + 1), g)
             }
         }
 
@@ -284,7 +285,7 @@ class ControleVideo(
     fun pular(sentido: Int) {
         val s = vm.saltoSeg
         buscar(player.currentPosition + sentido * s * 1000L)
-        mostrarMensagem(if (sentido < 0) "- $s segundos" else "+ $s segundos")
+        mostrarMensagem(if (sentido < 0) tr("- %s segundos", s) else tr("+ %s segundos", s))
     }
 
     fun definirVelocidade(v: Float) {
@@ -296,7 +297,7 @@ class ControleVideo(
         turbo = true
         val v = vm.velocidadeTurbo
         player.setPlaybackSpeed(v)
-        mostrarMensagem("Velocidade " + (if (v % 1f == 0f) v.roundToInt().toString() else String.format(Locale.getDefault(), "%.1f", v)) + "x")
+        mostrarMensagem(tr("Velocidade %sx", if (v % 1f == 0f) v.roundToInt().toString() else String.format(Locale.getDefault(), "%.1f", v)))
     }
 
     fun desligarTurbo() {
@@ -347,7 +348,7 @@ class ControleVideo(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                erro = "A versão convertida não está disponível: ${e.message}"
+                erro = tr("A versão convertida não está disponível: %s", e.message)
             }
         }
     }
@@ -370,7 +371,7 @@ class ControleVideo(
      */
     private suspend fun carregarQualidades() {
         val lado = ladoMenor(larguraOriginal, alturaOriginal)
-        val original = Qualidade("${rotuloAltura(lado)} (original)", lado, null, true)
+        val original = Qualidade(tr("%s (original)", rotuloAltura(lado)), lado, null, true)
         val convertidas = try {
             vm.midia.formatosConvertidos(email, arquivo.id)
         } catch (e: CancellationException) {
@@ -453,7 +454,7 @@ class ControleVideo(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                erro = "Não foi possível transmitir: ${e.message}"
+                erro = tr("Não foi possível transmitir: %s", e.message)
                 player.play()
             }
         } else if (cast.estado != CastState.CONNECTED && cast.transmitindo) {
