@@ -234,6 +234,14 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
         restaurarPilha()
         recarregarFavoritosLocais()
         recarregar()
+        // o que vem do arquivo no Drive (favoritos, capas, ajustes) entra na tela assim que chega
+        c.sync.aoDadosAplicados = { email ->
+            if (email == contaAtual?.email) {
+                recarregarFavoritosLocais()
+                carregarFavoritos(forcar = true)
+            }
+        }
+        c.sync.aoConfigAplicada = { recarregarAjustes() }
         // a pasta aberta é guardada a cada mudança: se o Android encerrar o app em segundo plano, volta para ela
         viewModelScope.launch {
             snapshotFlow { pilha }.collect { guardarPilha(it) }
@@ -257,6 +265,47 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
     }
 
     fun mostrarErro(msg: String) { erro = msg }
+
+    /** Lê de novo todos os ajustes (depois que vieram do Drive) e refaz a lista se a ordenação mudou. */
+    fun recarregarAjustes() {
+        val ordemAntes = Triple(campo, crescente, pastasPrimeiro)
+        grade = c.prefs.grade
+        campo = runCatching { CampoOrdem.valueOf(c.prefs.campo) }.getOrDefault(CampoOrdem.Nome)
+        crescente = c.prefs.crescente
+        vidroAtivo = c.prefs.vidro
+        tamanhoMiniatura = c.prefs.miniatura
+        repetirVideo = c.prefs.repetirVideo
+        retomarVideo = c.prefs.retomarVideo
+        saltoSeg = c.prefs.saltoSeg
+        velocidadeTurbo = c.prefs.turbo
+        resWifi = c.prefs.resWifi
+        resMovel = c.prefs.resMovel
+        controlesMs = c.prefs.controlesMs
+        esperaFecharMs = c.prefs.esperaFecharMs
+        animarGifs = c.prefs.animarGifs
+        colunas = c.prefs.colunas
+        blurIntensidade = c.prefs.blurIntensidade
+        reflexoPilula = c.prefs.reflexoPilula
+        reflexoSoToolbars = c.prefs.reflexoSoToolbars
+        fundoCard = c.prefs.fundoCard
+        pastasPrimeiro = c.prefs.pastasPrimeiro
+        mostrarNomes = c.prefs.mostrarNomes
+        miniaturasSoWifi = c.prefs.miniaturasSoWifi
+        vibrar = c.prefs.vibrar
+        animacoes = c.prefs.animacoes
+        TempoGaleria.esperaMs = esperaFecharMs
+        Animacoes.modo = animacoes
+        if (ordemAntes != Triple(campo, crescente, pastasPrimeiro)) {
+            cache.clear()
+            if (buscando) definirTermo(termo) else recarregar()
+        }
+    }
+
+    override fun onCleared() {
+        c.sync.aoDadosAplicados = null
+        c.sync.aoConfigAplicada = null
+        super.onCleared()
+    }
 
     /**
      * Conta cuja autorização do Google expirou ou foi revogada. A tela observa isto e abre a confirmação de
@@ -1366,6 +1415,8 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
                 contas = contas.filterNot { it.email == nova.email } + nova
                 c.accounts.save(contas)
                 selecionar(nova)
+                // traz o que essa conta já tem guardado no Drive (favoritos, capas, ajustes)
+                c.sync.carregarConta(nova.email)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -1388,6 +1439,7 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
         c.auth.forget(conta.email)
         contas = contas.filterNot { it.email == conta.email }
         c.accounts.save(contas)
+        c.sync.esquecer(conta.email)
         // Os dados locais da conta saem junto: favoritos, capas, posição dos vídeos e arquivos em cache.
         // Nada é apagado do Drive.
         val email = conta.email
