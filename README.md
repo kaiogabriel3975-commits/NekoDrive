@@ -1,4 +1,3 @@
-[Uploading README.md…]()
 # NekoDrive
 
 App Android (Kotlin + Jetpack Compose) para ver vídeos e fotos do seu Google Drive, organizado por pastas.
