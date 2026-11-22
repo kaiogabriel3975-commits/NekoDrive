@@ -45,6 +45,10 @@ class DriveHttpException(val code: Int, mensagem: String) : IOException(mensagem
 /** Arquivo achado dentro de uma pasta, com o caminho relativo ("Fotos/2024") a partir da pasta escolhida. */
 class ArquivoDePasta(val arquivo: DriveFile, val caminho: String)
 
+/** Pasta e arquivo do Drive onde o app guarda o que só ele enxerga (capas, favoritos, ajustes). */
+const val NOME_PASTA_CONFIG = "etc"
+const val NOME_ARQUIVO_CONFIG = "configNkapp.txt"
+
 class DriveRepository(private val auth: AuthManager) {
     private val http = Rede.base
     private val api = "https://www.googleapis.com/drive/v3/"
@@ -331,6 +335,65 @@ class DriveRepository(private val auth: AuthManager) {
             if (e.code == 404) null else throw e
         }
     }
+
+    // ---------- arquivo de configuração do app (pasta "etc" na raiz do Meu Drive) ----------
+
+    private fun primeiroId(token: String, consulta: String): String? {
+        val url = (api + "files").toHttpUrl().newBuilder()
+            .addQueryParameter("q", consulta)
+            .addQueryParameter("fields", "files(id)")
+            .addQueryParameter("pageSize", "1")
+            .build()
+        val arr = JSONObject(get(token, url)).optJSONArray("files")
+        return if (arr != null && arr.length() > 0) arr.getJSONObject(0).getString("id") else null
+    }
+
+    /** Acha a pasta [NOME_PASTA_CONFIG] na raiz e o arquivo dentro dela. null se a pasta não existe. */
+    suspend fun acharConfig(email: String): Pair<String, String?>? = comToken(email) { token ->
+        val pasta = primeiroId(
+            token,
+            "name = '$NOME_PASTA_CONFIG' and 'root' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
+        ) ?: return@comToken null
+        val arquivo = primeiroId(token, "name = '$NOME_ARQUIVO_CONFIG' and '$pasta' in parents and trashed = false")
+        pasta to arquivo
+    }
+
+    /** Conteúdo bruto de um arquivo do Drive (só para arquivos pequenos, como o de configuração). */
+    suspend fun lerBytes(email: String, id: String): ByteArray = comToken(email) { token ->
+        val url = (api + "files/" + id).toHttpUrl().newBuilder().addQueryParameter("alt", "media").build()
+        http.newCall(Request.Builder().url(url).header("Authorization", "Bearer $token").build()).execute().use { resp ->
+            if (resp.code == 401) throw UnauthorizedException()
+            if (!resp.isSuccessful) throw DriveHttpException(resp.code, mensagemDeErro(resp.code, resp.body?.string().orEmpty()))
+            resp.body?.bytes() ?: ByteArray(0)
+        }
+    }
+
+    /**
+     * Grava o arquivo de configuração, criando a pasta e o arquivo se faltarem ([idPasta] ou [idArquivo] nulos).
+     * Devolve os ids da pasta e do arquivo.
+     */
+    suspend fun gravarConfig(email: String, idPasta: String?, idArquivo: String?, dados: ByteArray): Pair<String, String> =
+        comToken(email) { token ->
+            val json = "application/json".toMediaType()
+            val pasta = idPasta ?: run {
+                val corpo = JSONObject().put("name", NOME_PASTA_CONFIG).put("mimeType", "application/vnd.google-apps.folder")
+                    .put("parents", JSONArray().put("root")).toString().toRequestBody(json)
+                val url = (api + "files").toHttpUrl().newBuilder().addQueryParameter("fields", "id").build()
+                JSONObject(executar(Request.Builder().url(url).post(corpo).header("Authorization", "Bearer $token").build())).getString("id")
+            }
+            val arquivo = idArquivo ?: run {
+                val corpo = JSONObject().put("name", NOME_ARQUIVO_CONFIG).put("mimeType", "application/octet-stream")
+                    .put("parents", JSONArray().put(pasta)).toString().toRequestBody(json)
+                val url = (api + "files").toHttpUrl().newBuilder().addQueryParameter("fields", "id").build()
+                JSONObject(executar(Request.Builder().url(url).post(corpo).header("Authorization", "Bearer $token").build())).getString("id")
+            }
+            val conteudo = dados.toRequestBody("application/octet-stream".toMediaType())
+            executar(
+                Request.Builder().url("https://www.googleapis.com/upload/drive/v3/files/$arquivo?uploadType=media")
+                    .patch(conteudo).header("Authorization", "Bearer $token").build(),
+            )
+            pasta to arquivo
+        }
 
     /** Tira um item da lixeira. */
     suspend fun restaurar(email: String, id: String) {
