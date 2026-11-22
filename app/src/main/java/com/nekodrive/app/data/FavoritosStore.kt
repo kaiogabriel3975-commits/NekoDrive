@@ -20,6 +20,7 @@ class FavoritosStore(context: Context) {
                 size = o.optString("size").toLongOrNull(),
                 modifiedTime = o.optString("modifiedTime").ifEmpty { null },
                 thumbnailLink = o.optString("thumbnailLink").ifEmpty { null },
+                md5 = o.optString("md5").ifEmpty { null },
             )
         }
     } catch (e: Exception) {
@@ -36,7 +37,8 @@ class FavoritosStore(context: Context) {
                     .put("id", it.id).put("name", it.name).put("mimeType", it.mimeType)
                     .put("size", it.size?.toString() ?: "")
                     .put("modifiedTime", it.modifiedTime ?: "")
-                    .put("thumbnailLink", it.thumbnailLink ?: ""),
+                    .put("thumbnailLink", it.thumbnailLink ?: "")
+                    .put("md5", it.md5 ?: ""),
             )
         }
         p.edit().putString(email, arr.toString()).apply()
