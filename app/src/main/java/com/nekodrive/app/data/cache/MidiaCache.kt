@@ -1,5 +1,6 @@
 package com.nekodrive.app.data.cache
 
+import com.nekodrive.app.data.tr
 import android.content.Context
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
@@ -176,7 +177,7 @@ class MidiaCache(private val context: Context, private val auth: AuthManager, li
             val token = try {
                 runBlocking { auth.token(email) }
             } catch (e: Exception) {
-                throw IOException("Sem autorização do Drive: ${e.message}", e)
+                throw IOException(tr("Sem autorização do Drive: %s", e.message), e)
             }
             chain.proceed(req.newBuilder().header("Authorization", "Bearer $token").build())
         }
@@ -211,7 +212,7 @@ class MidiaCache(private val context: Context, private val auth: AuthManager, li
             if (i < 0) null else URLDecoder.decode(par.substring(0, i), "UTF-8") to URLDecoder.decode(par.substring(i + 1), "UTF-8")
         }.toMap()
         if (campos["status"] != "ok") {
-            throw IOException(campos["reason"] ?: "O Drive não ofereceu uma versão convertida deste vídeo")
+            throw IOException(campos["reason"] ?: tr("O Drive não ofereceu uma versão convertida deste vídeo"))
         }
         val dimensoes = (campos["fmt_list"] ?: "").split(',').mapNotNull { entrada ->
             val partes = entrada.split('/')
@@ -220,7 +221,7 @@ class MidiaCache(private val context: Context, private val auth: AuthManager, li
             val altura = wh?.getOrNull(1)?.toIntOrNull()
             if (altura != null) partes[0] to (largura to altura) else null
         }.toMap()
-        val urls = (campos["fmt_stream_map"] ?: throw IOException("O Drive não devolveu os formatos convertidos"))
+        val urls = (campos["fmt_stream_map"] ?: throw IOException(tr("O Drive não devolveu os formatos convertidos")))
             .split(',')
             .mapNotNull { entrada ->
                 val i = entrada.indexOf('|')
@@ -231,7 +232,7 @@ class MidiaCache(private val context: Context, private val auth: AuthManager, li
             val altura = dim?.second ?: ALTURA_PADRAO[itag] ?: return@mapNotNull null
             FormatoConvertido(itag, altura, url, dim?.first ?: 0)
         }.sortedByDescending { it.altura }
-        if (formatos.isEmpty()) throw IOException("Nenhum formato convertido disponível")
+        if (formatos.isEmpty()) throw IOException(tr("Nenhum formato convertido disponível"))
         formatos
     }
 
