@@ -56,7 +56,7 @@ class DialogoCast : MediaRouteChooserDialogFragment() {
 }
 
 /** Sessão de transmissão para o Chromecast: estado observável e controles remotos. */
-class CastControle(private val ctx: Context, private val servidor: ServidorLocal) {
+class CastControle(private val ctx: Context, private val servidor: ServidorLocal, private val email: String? = null) {
     // Nulo até o SDK terminar de abrir (em segundo plano) ou para sempre se o aparelho não tiver Cast.
     private var contexto: CastContext? by mutableStateOf(null)
     private var anexado = false
@@ -130,7 +130,7 @@ class CastControle(private val ctx: Context, private val servidor: ServidorLocal
         val remoto = sessao.remoteMediaClient ?: throw IOException("O dispositivo não está pronto")
         val ip = ipLocal() ?: throw IOException("Conecte o celular ao Wi-Fi")
         servidor.iniciarSeNecessario()
-        val chave = servidor.registrar(url, mime)
+        val chave = servidor.registrar(url, mime, email)
         val endereco = "http://$ip:${servidor.porta}/v/$chave"
         val meta = MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply { putString(MediaMetadata.KEY_TITLE, titulo) }
         val info = MediaInfo.Builder(endereco)
