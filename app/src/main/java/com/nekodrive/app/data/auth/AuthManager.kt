@@ -1,5 +1,6 @@
 package com.nekodrive.app.data.auth
 
+import com.nekodrive.app.data.tr
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -20,7 +21,7 @@ import okhttp3.FormBody
 import okhttp3.Request
 import org.json.JSONObject
 
-class NeedsConsentException : Exception("Autorização necessária: entre de novo com a conta.")
+class NeedsConsentException : Exception(tr("Autorização necessária: entre de novo com a conta."))
 
 /** Resultado do login: [renovacao] é o token que mantém a conta autorizada sem pedir login de novo. */
 class LoginConcluido(val accessToken: String, val renovacao: String?, val validoMs: Long)
@@ -65,13 +66,13 @@ class AuthManager(context: Context) {
 
     /** Troca o código que o navegador devolveu pelos tokens (usa o PKCE guardado no próprio pedido). */
     suspend fun concluirLogin(data: Intent?): LoginConcluido = withContext(Dispatchers.IO) {
-        if (data == null) throw IOException("Login não concluído.")
+        if (data == null) throw IOException(tr("Login não concluído."))
         val resposta = AuthorizationResponse.fromIntent(data)
         if (resposta == null) {
             val erro = AuthorizationException.fromIntent(data)
-            throw IOException(erro?.errorDescription ?: erro?.error ?: "Login não concluído.")
+            throw IOException(erro?.errorDescription ?: erro?.error ?: tr("Login não concluído."))
         }
-        val codigo = resposta.authorizationCode ?: throw IOException("O Google não devolveu o código de acesso.")
+        val codigo = resposta.authorizationCode ?: throw IOException(tr("O Google não devolveu o código de acesso."))
         val corpo = FormBody.Builder()
             .add("client_id", resposta.request.clientId)
             .add("grant_type", "authorization_code")
@@ -160,7 +161,7 @@ class AuthManager(context: Context) {
             val j = JSONObject(corpo)
             j.optString("error_description").ifEmpty { j.optString("error") }
         }.getOrDefault("")
-        return "Falha no login do Google ($codigo)" + if (detalhe.isNotEmpty()) ": $detalhe" else ""
+        return tr("Falha no login do Google (%s)", codigo) + if (detalhe.isNotEmpty()) ": $detalhe" else ""
     }
 
     private companion object {
