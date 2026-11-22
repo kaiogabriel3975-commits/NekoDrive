@@ -16,6 +16,11 @@ import com.nekodrive.app.data.drive.DriveRepository
 class AppContainer(context: Context) {
     val accounts = AccountStore(context)
     val prefs = ViewPrefs(context)
+
+    // idioma escolhido, antes de qualquer tela ou notificação usar textos
+    init {
+        I18n.definir(prefs.idioma)
+    }
     val playback = PlaybackStore(context)
     val favoritos = FavoritosStore(context)
     val capas = CapasStore(context)
