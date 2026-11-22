@@ -1,5 +1,6 @@
 package com.nekodrive.app.ui
 
+import com.nekodrive.app.data.tr
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
@@ -23,8 +24,8 @@ fun DialogRenomear(
     nomeAtual: String,
     aoConfirmar: (String) -> Unit,
     aoCancelar: () -> Unit,
-    titulo: String = "Renomear",
-    rotuloConfirmar: String = "Renomear",
+    titulo: String = tr("Renomear"),
+    rotuloConfirmar: String = tr("Renomear"),
 ) {
     val semExtensao = nomeAtual.substringBeforeLast('.', nomeAtual)
     var campo by remember { mutableStateOf(TextFieldValue(nomeAtual, TextRange(0, semExtensao.length))) }
@@ -44,6 +45,6 @@ fun DialogRenomear(
         confirmButton = {
             TextButton(onClick = { aoConfirmar(campo.text) }, enabled = campo.text.isNotBlank()) { Text(rotuloConfirmar) }
         },
-        dismissButton = { TextButton(onClick = aoCancelar) { Text("Cancelar") } },
+        dismissButton = { TextButton(onClick = aoCancelar) { Text(tr("Cancelar")) } },
     )
 }
