@@ -20,8 +20,6 @@ class MainActivity : FragmentActivity() {
             navigationBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT),
         )
         window.isNavigationBarContrastEnforced = false
-        window.statusBarColor = Color.TRANSPARENT
-        window.navigationBarColor = Color.TRANSPARENT
         window.navigationBarDividerColor = Color.TRANSPARENT
         val container = (application as NekoDriveApplication).container
         setContent { NekoDriveTheme(container.prefs.tema) { NekoDriveApp() } }
