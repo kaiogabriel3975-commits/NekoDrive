@@ -14,6 +14,7 @@ import androidx.media3.datasource.cache.CacheSpan
 import androidx.media3.datasource.cache.CacheWriter
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.datasource.okhttp.OkHttpDataSource
+import com.nekodrive.app.data.Rede
 import com.nekodrive.app.data.auth.AuthManager
 import com.nekodrive.app.data.drive.DriveFile
 import kotlinx.coroutines.Dispatchers
@@ -24,13 +25,14 @@ import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.IOException
 import java.net.URLDecoder
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.TreeSet
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.coroutineContext
 
@@ -45,7 +47,13 @@ private val ALTURA_PADRAO = mapOf("37" to 1080, "22" to 720, "59" to 480, "35" t
  * Cabeçalho interno que diz de qual conta é a requisição. O interceptor usa e remove: nunca vai para a rede.
  * Sem ele, vale a conta atual do app. Assim um download da conta A não depende da conta que está na tela.
  */
-private const val CABECALHO_CONTA = "X-Neko-Conta"
+internal const val CABECALHO_CONTA = "X-Neko-Conta"
+
+/**
+ * Parâmetro interno na URI que diz de qual conta é o pedido (usado nas legendas laterais, que não têm chave de cache).
+ * O ResolvingDataSource troca por [CABECALHO_CONTA] e o tira da URI: nunca vai para a rede.
+ */
+internal const val PARAM_CONTA = "neko_conta"
 
 /** O token do Drive só é enviado para estes endereços do Google. */
 private val HOSTS_COM_TOKEN = setOf("www.googleapis.com", "drive.google.com", "docs.google.com")
@@ -78,6 +86,10 @@ class EvictorAjustavel(inicial: Long) : CacheEvictor {
     @Volatile
     var maxBytes: Long = inicial
 
+    /** Avisado (com a chave do recurso) toda vez que um trecho entra ou sai do cache. */
+    @Volatile
+    var aoMudar: ((String) -> Unit)? = null
+
     private val porUso = TreeSet<CacheSpan> { a, b ->
         val d = a.lastTouchTimestamp - b.lastTouchTimestamp
         if (d == 0L) a.compareTo(b) else if (d < 0) -1 else 1
@@ -96,6 +108,7 @@ class EvictorAjustavel(inicial: Long) : CacheEvictor {
     override fun onSpanAdded(cache: Cache, span: CacheSpan) {
         porUso.add(span)
         tamanhoAtual += span.length
+        aoMudar?.invoke(span.key)
         liberar(cache, 0)
     }
 
@@ -103,6 +116,7 @@ class EvictorAjustavel(inicial: Long) : CacheEvictor {
     override fun onSpanRemoved(cache: Cache, span: CacheSpan) {
         porUso.remove(span)
         tamanhoAtual -= span.length
+        aoMudar?.invoke(span.key)
     }
 
     override fun onSpanTouched(cache: Cache, oldSpan: CacheSpan, newSpan: CacheSpan) {
@@ -128,10 +142,29 @@ class MidiaCache(private val context: Context, private val auth: AuthManager, li
     private val evictor = EvictorAjustavel(limiteGb * GB)
     private val cache = SimpleCache(File(context.cacheDir, "midia"), evictor, StandaloneDatabaseProvider(context))
 
+    // Resultado de completo() por arquivo ("chave|tamanho"). Qualquer trecho que entra ou sai do cache apaga
+    // as entradas daquele recurso; [mudancas] impede guardar um resultado calculado enquanto o cache mudava.
+    private val memoCompleto = ConcurrentHashMap<String, Boolean>()
+    private val mudancas = AtomicLong(0)
+
+    // Versão (md5) com que cada recurso foi guardado, para notar quando o arquivo mudou no Drive.
+    private val versoesPrefs = context.getSharedPreferences("versoes_cache", Context.MODE_PRIVATE)
+    private val versoes = ConcurrentHashMap<String, String>().also { mapa ->
+        versoesPrefs.all.forEach { (k, v) -> if (v is String) mapa[k] = v }
+    }
+
+    init {
+        evictor.aoMudar = { chave ->
+            val prefixo = "$chave|"
+            memoCompleto.keys.removeIf { it.startsWith(prefixo) }
+            mudancas.incrementAndGet()
+        }
+    }
+
     private val cookies = JarMemoria()
 
     /** Anexa o token da conta atual às requisições ao Google (renovado quando preciso). */
-    private val cliente = OkHttpClient.Builder().addInterceptor { chain ->
+    private val cliente = Rede.base.newBuilder().addInterceptor { chain ->
         val original = chain.request()
         // a conta da própria requisição (cabeçalho interno, sempre removido) vale mais que a conta atual da tela
         val daRequisicao = original.header(CABECALHO_CONTA)
@@ -216,15 +249,62 @@ class MidiaCache(private val context: Context, private val auth: AuthManager, li
             // a chave do cache começa com o e-mail da conta ("email|id"): vira o cabeçalho que o interceptor usa
             .setUpstreamDataSourceFactory(
                 ResolvingDataSource.Factory(OkHttpDataSource.Factory(cliente)) { spec ->
+                    val daUri = spec.uri.getQueryParameter(PARAM_CONTA)
                     val dona = spec.key?.substringBefore('|', "")?.takeIf { '@' in it }
-                    if (dona != null) spec.withAdditionalHeaders(mapOf(CABECALHO_CONTA to dona)) else spec
+                    if (daUri != null) {
+                        val limpa = spec.uri.buildUpon().clearQuery().apply {
+                            spec.uri.queryParameterNames.filter { it != PARAM_CONTA }.forEach { nome ->
+                                spec.uri.getQueryParameters(nome).forEach { valor -> appendQueryParameter(nome, valor) }
+                            }
+                        }.build()
+                        spec.withUri(limpa).withAdditionalHeaders(mapOf(CABECALHO_CONTA to daUri))
+                    } else if (dona != null) {
+                        spec.withAdditionalHeaders(mapOf(CABECALHO_CONTA to dona))
+                    } else {
+                        spec
+                    }
                 },
             )
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
+    /** O que está guardado ainda é a versão atual do arquivo? Sem md5 (ex.: Google Docs) ou sem registro, vale. */
+    private fun versaoConfere(chave: String, f: DriveFile): Boolean {
+        val md5 = f.md5 ?: return true
+        val guardada = versoes[chave] ?: return true
+        return guardada == md5
+    }
+
+    /**
+     * Chamar antes de usar o arquivo (tocar, baixar). Se o conteúdo mudou no Drive desde que foi guardado,
+     * apaga a cópia antiga (e as versões convertidas dela) e passa a valer a versão nova. Rápido quando nada mudou.
+     */
+    fun validar(email: String, f: DriveFile) {
+        val md5 = f.md5 ?: return
+        val chave = chave(email, f.id)
+        val guardada = versoes[chave]
+        if (guardada == md5) return
+        if (guardada != null) {
+            // mudou: o que está no cache é de outra versão
+            cache.keys.toList().filter { it == chave || it.startsWith("$chave|") }.forEach { cache.removeResource(it) }
+        }
+        versoes[chave] = md5
+        versoesPrefs.edit().putString(chave, md5).apply()
+    }
+
     fun completo(email: String, f: DriveFile): Boolean {
         val tam = f.size ?: return false
-        return tam > 0 && cache.isCached(chave(email, f.id), 0, tam)
+        if (tam <= 0) return false
+        val chave = chave(email, f.id)
+        if (!versaoConfere(chave, f)) return false
+        val k = "$chave|$tam"
+        memoCompleto[k]?.let { return it }
+        val antes = mudancas.get()
+        val resultado = cache.isCached(chave, 0, tam)
+        if (mudancas.get() == antes) {
+            if (memoCompleto.size > LIMITE_MEMO) memoCompleto.clear()
+            memoCompleto[k] = resultado
+        }
+        return resultado
     }
 
     /** Arquivo de uma foto já guardada por inteiro (para abrir offline), ou null. */
@@ -274,11 +354,15 @@ class MidiaCache(private val context: Context, private val auth: AuthManager, li
     fun limparConta(email: String) {
         val prefixo = "$email|"
         cache.keys.toList().filter { it.startsWith(prefixo) }.forEach { cache.removeResource(it) }
+        val antigas = versoes.keys.filter { it.startsWith(prefixo) }
+        antigas.forEach { versoes.remove(it) }
+        if (antigas.isNotEmpty()) versoesPrefs.edit().apply { antigas.forEach { remove(it) } }.apply()
     }
 
     /** Baixa o arquivo inteiro para o cache; baixar de novo continua de onde parou. */
     suspend fun baixar(email: String, f: DriveFile, aoProgresso: (Float) -> Unit) {
         withContext(Dispatchers.IO) {
+            validar(email, f)
             val fonte = fabrica().createDataSourceForDownloading()
             val spec = DataSpec.Builder().setUri(url(f.id)).setKey(chave(email, f.id)).build()
             val escritor = CacheWriter(fonte, spec, null) { tamanho, baixado, _ ->
@@ -303,9 +387,12 @@ class MidiaCache(private val context: Context, private val auth: AuthManager, li
 
     fun limpar() {
         cache.keys.toList().forEach { cache.removeResource(it) }
+        versoes.clear()
+        versoesPrefs.edit().clear().apply()
     }
 }
 
 /** Arquivos em vários trechos só são juntados até este tamanho (ex.: fotos). */
+private const val LIMITE_MEMO = 5000
 private const val LIMITE_JUNTAR_BYTES = 32L * 1024 * 1024
 private const val IDADE_JUNTAR_MS = 10 * 60 * 1000L
