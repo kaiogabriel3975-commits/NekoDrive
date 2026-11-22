@@ -7,7 +7,7 @@ package com.nekodrive.app.ui
  */
 object Autor {
     const val NOME = "Kyle_Neeko"
-    const val GITHUB = "https://github.com/Kyle_Neeko"
+    const val GITHUB = "https://github.com/kaiogabriel3975-commits"
     const val EMAIL = "kaiogabriel3975@gmail.com"
 
     /** Rede da carteira (aparece acima do endereço). */
