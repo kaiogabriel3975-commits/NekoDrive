@@ -16,7 +16,7 @@ import java.util.concurrent.ConcurrentHashMap
  * da conta, repassando o cabeçalho Range (necessário para avançar/voltar na TV).
  */
 class ServidorLocal(private val cliente: OkHttpClient) : NanoHTTPD(0) {
-    private class Destino(val url: String, val mime: String)
+    private class Destino(val url: String, val mime: String, val email: String?)
 
     private val destinos = ConcurrentHashMap<String, Destino>()
 
@@ -71,9 +71,10 @@ class ServidorLocal(private val cliente: OkHttpClient) : NanoHTTPD(0) {
     }
 
     /** Registra um endereço do Drive e devolve a chave que vai no link local (/v/chave). */
-    fun registrar(url: String, mime: String): String {
+    fun registrar(url: String, mime: String, email: String? = null): String {
         val chave = UUID.randomUUID().toString().replace("-", "").take(16)
-        destinos[chave] = Destino(url, mime)
+        // [email]: a conta dona do arquivo; sem ele vale a conta atual do app (como antes)
+        destinos[chave] = Destino(url, mime, email)
         return chave
     }
 
@@ -88,6 +89,7 @@ class ServidorLocal(private val cliente: OkHttpClient) : NanoHTTPD(0) {
         var entregue = false
         return try {
             val req = Request.Builder().url(destino.url)
+                .apply { destino.email?.let { header(CABECALHO_CONTA, it) } }
                 .apply { sessao.headers["range"]?.let { header("Range", it) } }
                 .build()
             val resp = cliente.newCall(req).execute()
