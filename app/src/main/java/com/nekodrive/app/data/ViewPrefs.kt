@@ -130,6 +130,11 @@ class ViewPrefs(context: Context) {
         set(v) { p.edit().putBoolean("vibrar", v).apply() }
 
     /** Animações: 0 normais, 1 baratas para a GPU, 2 sem animações. */
+    /** Idioma: 0 = automático, 1 = português, 2 = inglês. */
+    var idioma: Int
+        get() = p.getInt("idioma", 0)
+        set(v) { p.edit().putInt("idioma", v).apply() }
+
     var animacoes: Int
         get() = p.getInt("animacoes", 0)
         set(v) { p.edit().putInt("animacoes", v).apply() }
