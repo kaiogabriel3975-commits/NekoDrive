@@ -25,6 +25,18 @@ class MainActivity : FragmentActivity() {
         setContent { NekoDriveTheme(container.prefs.tema) { NekoDriveApp() } }
     }
 
+    override fun onStart() {
+        super.onStart()
+        // confere com o Drive o que for preciso (ajustes, favoritos, capas); em segundo plano
+        (application as NekoDriveApplication).container.sync.iniciar()
+    }
+
+    override fun onStop() {
+        // indo para segundo plano é um bom momento para salvar o que mudou
+        (application as NekoDriveApplication).container.sync.salvarAgora()
+        super.onStop()
+    }
+
     override fun onResume() {
         super.onResume()
         AppLogger.log(this, "MainActivity.onResume")
