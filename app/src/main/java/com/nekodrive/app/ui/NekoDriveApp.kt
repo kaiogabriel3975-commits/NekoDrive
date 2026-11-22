@@ -83,6 +83,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -141,6 +142,11 @@ fun NekoDriveApp() {
     val container = (context.applicationContext as NekoDriveApplication).container
     val vm: DriveViewModel = viewModel(factory = viewModelFactory { initializer { DriveViewModel(container, createSavedStateHandle()) } })
     val scope = rememberCoroutineScope()
+
+    // Se a Activity for recriada (tema, idioma), o ViewModel fica e os estados de rolagem dele soltam a tela antiga
+    DisposableEffect(vm) {
+        onDispose { if ((context as? Activity)?.isChangingConfigurations == true) vm.soltarEstadosDeRolagem() }
+    }
 
     var atual by rememberSaveable { mutableStateOf(Destino.Drive) }
     var mostrarContas by rememberSaveable { mutableStateOf(false) }
