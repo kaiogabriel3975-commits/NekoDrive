@@ -1,5 +1,6 @@
 package com.nekodrive.app
 
+import com.nekodrive.app.data.tr
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -74,7 +75,7 @@ class ServicoReproducao : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        val canal = NotificationChannel(CANAL, "Reprodução em segundo plano", NotificationManager.IMPORTANCE_LOW)
+        val canal = NotificationChannel(CANAL, tr("Reprodução em segundo plano"), NotificationManager.IMPORTANCE_LOW)
         getSystemService(NotificationManager::class.java).createNotificationChannel(canal)
     }
 
@@ -157,12 +158,12 @@ class ServicoReproducao : Service() {
     private fun montarNotificacao(p: ExoPlayer?): Notification {
         val tocando = p?.isPlaying == true
         val acaoPrincipal = if (tocando) {
-            Notification.Action.Builder(Icon.createWithResource(this, android.R.drawable.ic_media_pause), "Pausar", acao(ACAO_PAUSE)).build()
+            Notification.Action.Builder(Icon.createWithResource(this, android.R.drawable.ic_media_pause), tr("Pausar"), acao(ACAO_PAUSE)).build()
         } else {
-            Notification.Action.Builder(Icon.createWithResource(this, android.R.drawable.ic_media_play), "Reproduzir", acao(ACAO_PLAY)).build()
+            Notification.Action.Builder(Icon.createWithResource(this, android.R.drawable.ic_media_play), tr("Reproduzir"), acao(ACAO_PLAY)).build()
         }
         val acaoParar = Notification.Action.Builder(
-            Icon.createWithResource(this, android.R.drawable.ic_menu_close_clear_cancel), "Fechar", acao(ACAO_PARAR),
+            Icon.createWithResource(this, android.R.drawable.ic_menu_close_clear_cancel), tr("Fechar"), acao(ACAO_PARAR),
         ).build()
         val abrir = PendingIntent.getActivity(
             this, 0,
