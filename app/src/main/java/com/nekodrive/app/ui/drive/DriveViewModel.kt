@@ -203,8 +203,15 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
     var tituloDetalhes by mutableStateOf(""); private set
     var carregandoDetalhes by mutableStateOf(false); private set
 
-    private val estadosGrade = HashMap<String, LazyGridState>()
-    private val estadosLista = HashMap<String, LazyListState>()
+    // No máximo estes estados de rolagem (os usados há mais tempo saem primeiro): a pasta que sai volta ao topo.
+    private val estadosGrade = object : LinkedHashMap<String, LazyGridState>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, LazyGridState>?) = size > MAX_ESTADOS_ROLAGEM
+    }
+    private val estadosLista = object : LinkedHashMap<String, LazyListState>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, LazyListState>?) = size > MAX_ESTADOS_ROLAGEM
+    }
+    private val posicoesGrade = HashMap<String, Pair<Int, Int>>()
+    private val posicoesLista = HashMap<String, Pair<Int, Int>>()
 
     private var proxima: String? = null
     private var job: Job? = null
@@ -265,8 +272,26 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
     }
 
     /** Posição de rolagem por pasta: sobrevive à abertura do visualizador e ao voltar de uma pasta. */
-    fun estadoGrade(chave: String): LazyGridState = estadosGrade.getOrPut(chave) { LazyGridState() }
-    fun estadoLista(chave: String): LazyListState = estadosLista.getOrPut(chave) { LazyListState() }
+    fun estadoGrade(chave: String): LazyGridState = estadosGrade.getOrPut(chave) {
+        val p = posicoesGrade.remove(chave)
+        LazyGridState(p?.first ?: 0, p?.second ?: 0)
+    }
+    fun estadoLista(chave: String): LazyListState = estadosLista.getOrPut(chave) {
+        val p = posicoesLista.remove(chave)
+        LazyListState(p?.first ?: 0, p?.second ?: 0)
+    }
+
+    /**
+     * A Activity vai ser recriada (ex.: troca de tema ou de idioma) e este ViewModel continua. Os estados de
+     * rolagem guardam referências à tela antiga; aqui ficam só as posições, e os estados nascem de novo quando
+     * a tela pedir. Assim a Activity antiga pode ser liberada e a rolagem de cada pasta continua onde estava.
+     */
+    fun soltarEstadosDeRolagem() {
+        estadosGrade.forEach { (k, v) -> posicoesGrade[k] = v.firstVisibleItemIndex to v.firstVisibleItemScrollOffset }
+        estadosLista.forEach { (k, v) -> posicoesLista[k] = v.firstVisibleItemIndex to v.firstVisibleItemScrollOffset }
+        estadosGrade.clear()
+        estadosLista.clear()
+    }
     private fun reiniciarRolagem(chave: String) { estadosGrade.remove(chave); estadosLista.remove(chave) }
 
     // ---------- consulta ----------
@@ -662,6 +687,12 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
     // ---------- cache e downloads ----------
 
     fun chaveCache(f: DriveFile): String = c.midia.chave(contaAtual?.email ?: "", f.id)
+
+    /** Antes de tocar: se o arquivo foi editado no Drive, descarta a cópia antiga do cache. */
+    fun validarCache(f: DriveFile) {
+        val conta = contaAtual ?: return
+        runCatching { c.midia.validar(conta.email, f) }
+    }
 
     fun arquivoLocal(f: DriveFile): java.io.File? = contaAtual?.let { c.midia.arquivoLocal(it.email, f) }
 
@@ -1244,7 +1275,7 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
     private suspend fun paginaLixeira(conta: GoogleAccount, pagina: String?) {
         carregandoLixeira = true
         try {
-            val p = c.drive.list(conta.email, "trashed = true", "folder,name_natural", pagina)
+            val p = c.drive.list(conta.email, "trashed = true", "folder,name_natural", pagina, soExplicitos = true)
             lixeira = lixeira + p.files
             proximaLixeira = p.nextPageToken
             temMaisLixeira = proximaLixeira != null
@@ -1385,6 +1416,7 @@ class DriveViewModel(private val c: AppContainer, private val estadoSalvo: Saved
 }
 
 /** Cópias para compartilhar/abrir/copiar só são apagadas depois deste tempo. */
+private const val MAX_ESTADOS_ROLAGEM = 60
 private const val IDADE_LIMPEZA_COPIAS_MS = 10 * 60 * 1000L
 
 /** Intervalo mínimo entre conferências automáticas dos favoritos no Drive. */
