@@ -27,6 +27,7 @@ import androidx.media3.effect.Presentation
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.google.android.gms.cast.framework.CastState
+import com.nekodrive.app.data.cache.PARAM_CONTA
 import com.nekodrive.app.data.drive.DriveFile
 import com.nekodrive.app.ui.redeSemTarifa
 import com.nekodrive.app.ui.drive.DriveViewModel
@@ -88,7 +89,8 @@ class ControleVideo(
         // com a tela apagada (áudio em segundo plano) mantém CPU e Wi-Fi acordados só enquanto toca
         .setWakeMode(C.WAKE_MODE_NETWORK)
         .build()
-    val cast = CastControle(ctx, vm.midia.servidor)
+    // a conta do vídeo é a que estava na tela ao abrir: trocar de conta depois não muda de quem é a transmissão
+    val cast = CastControle(ctx, vm.midia.servidor, vm.contaAtual?.email)
 
     var tocando by mutableStateOf(false); private set
 
@@ -214,7 +216,11 @@ class ControleVideo(
 
     private fun montarItem(uri: String, chaveCache: String): MediaItem {
         val legendas = legendasLaterais.map { l ->
-            MediaItem.SubtitleConfiguration.Builder(Uri.parse(API + l.id + "?alt=media"))
+            val dona = vm.contaAtual?.email
+            val enderecoLegenda = Uri.parse(API + l.id + "?alt=media").buildUpon()
+                .apply { if (dona != null) appendQueryParameter(PARAM_CONTA, dona) }
+                .build()
+            MediaItem.SubtitleConfiguration.Builder(enderecoLegenda)
                 .setMimeType(if (l.name.endsWith(".vtt", true)) MimeTypes.TEXT_VTT else MimeTypes.APPLICATION_SUBRIP)
                 .setLabel(l.name)
                 .setSelectionFlags(0)
@@ -229,6 +235,7 @@ class ControleVideo(
 
     /** Prepara o vídeo original (com as legendas laterais) e retoma de onde parou. */
     fun iniciar() {
+        vm.validarCache(arquivo)
         val item = montarItem(API + arquivo.id + "?alt=media", vm.chaveCache(arquivo))
         val antes = vm.progresso(arquivo)
         player.setMediaItem(item)
