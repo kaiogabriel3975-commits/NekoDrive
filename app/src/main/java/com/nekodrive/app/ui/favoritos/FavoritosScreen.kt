@@ -1,5 +1,6 @@
 package com.nekodrive.app.ui.favoritos
 
+import com.nekodrive.app.data.tr
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
@@ -128,7 +129,7 @@ fun FavoritosScreen(
             }
             if (lista.isEmpty()) {
                 Text(
-                    "Nenhum favorito ainda.\nSegure um arquivo ou pasta e toque na estrela.",
+                    tr("Nenhum favorito ainda.\nSegure um arquivo ou pasta e toque na estrela."),
                     Modifier.align(Alignment.Center).padding(32.dp),
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -144,7 +145,7 @@ fun FavoritosScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (vm.selecionados.isNotEmpty()) {
-                    CirculoVidro(aoClicar = { vm.limparSelecao() }) { Icon(Icons.Rounded.Close, "Cancelar seleção", tint = cor) }
+                    CirculoVidro(aoClicar = { vm.limparSelecao() }) { Icon(Icons.Rounded.Close, tr("Cancelar seleção"), tint = cor) }
                     PilulaVidro {
                         Text(
                             "${vm.selecionados.size}",
@@ -156,16 +157,16 @@ fun FavoritosScreen(
                     Spacer(Modifier.weight(1f))
                     val unico = if (vm.selecionados.size == 1) lista.firstOrNull { it.id in vm.selecionados } else null
                     PilulaVidro {
-                        BotaoVidro(Icons.Rounded.Star, "Remover dos favoritos", { vm.favoritarSelecao(lista) }, cor)
-                        BotaoVidro(Icons.Rounded.Download, "Baixar", { vm.baixarSelecionados() }, cor)
-                        if (unico != null) BotaoVidro(Icons.Rounded.Edit, "Renomear", { renomear = unico }, cor)
-                        if (unico != null && unico.isFolder) BotaoVidro(Icons.Rounded.AddPhotoAlternate, "Definir capa", { vm.abrirSeletorCapa(unico) }, cor)
-                        BotaoVidro(Icons.Rounded.Delete, "Mover para a lixeira", { confirmar = true }, cor)
+                        BotaoVidro(Icons.Rounded.Star, tr("Remover dos favoritos"), { vm.favoritarSelecao(lista) }, cor)
+                        BotaoVidro(Icons.Rounded.Download, tr("Baixar"), { vm.baixarSelecionados() }, cor)
+                        if (unico != null) BotaoVidro(Icons.Rounded.Edit, tr("Renomear"), { renomear = unico }, cor)
+                        if (unico != null && unico.isFolder) BotaoVidro(Icons.Rounded.AddPhotoAlternate, tr("Definir capa"), { vm.abrirSeletorCapa(unico) }, cor)
+                        BotaoVidro(Icons.Rounded.Delete, tr("Mover para a lixeira"), { confirmar = true }, cor)
                     }
                 } else {
                     PilulaVidro {
                         Text(
-                            "Favoritos",
+                            tr("Favoritos"),
                             Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                             style = MaterialTheme.typography.titleSmall,
                             color = cor,
@@ -175,7 +176,7 @@ fun FavoritosScreen(
                     CirculoVidro(aoClicar = { vm.alternarModo() }) {
                         Icon(
                             if (vm.grade) Icons.AutoMirrored.Rounded.ViewList else Icons.Rounded.GridView,
-                            "Alternar entre grade e lista",
+                            tr("Alternar entre grade e lista"),
                             tint = cor,
                         )
                     }
@@ -184,12 +185,12 @@ fun FavoritosScreen(
             if (vm.indisponiveis.isNotEmpty()) {
                 PilulaVidro(Modifier.padding(horizontal = 12.dp)) {
                     Text(
-                        "${vm.indisponiveis.size} favorito(s) não estão mais no Drive.",
+                        tr("%s favorito(s) não estão mais no Drive.", vm.indisponiveis.size),
                         Modifier.padding(start = 10.dp),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
-                    TextButton(onClick = { vm.removerIndisponiveis() }) { Text("Remover da lista") }
+                    TextButton(onClick = { vm.removerIndisponiveis() }) { Text(tr("Remover da lista")) }
                 }
             }
         }
@@ -206,10 +207,10 @@ fun FavoritosScreen(
     if (confirmar) {
         AlertDialog(
             onDismissRequest = { confirmar = false },
-            title = { Text("Mover para a lixeira?") },
-            text = { Text("${vm.selecionados.size} item(ns) vão para a lixeira do Drive e saem dos favoritos.") },
-            confirmButton = { TextButton(onClick = { confirmar = false; vm.moverParaLixeira() }) { Text("Mover") } },
-            dismissButton = { TextButton(onClick = { confirmar = false }) { Text("Cancelar") } },
+            title = { Text(tr("Mover para a lixeira?")) },
+            text = { Text(tr("%s item(ns) vão para a lixeira do Drive e saem dos favoritos.", vm.selecionados.size)) },
+            confirmButton = { TextButton(onClick = { confirmar = false; vm.moverParaLixeira() }) { Text(tr("Mover")) } },
+            dismissButton = { TextButton(onClick = { confirmar = false }) { Text(tr("Cancelar")) } },
         )
     }
 }
