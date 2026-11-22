@@ -1,3 +1,4 @@
+[Uploading README.md…]()
 # NekoDrive
 
 App Android (Kotlin + Jetpack Compose) para ver vídeos e fotos do seu Google Drive, organizado por pastas.
@@ -9,7 +10,7 @@ projeto no Google Cloud.
 - **Navegação:** pastas do Meu Drive em grade ou lista, ordenação por nome, data ou tamanho, busca por nome em todo o Drive e várias contas Google.
 - **Fotos:** visualizador em tela cheia com zoom por pinça e toque duplo, giro, informações do arquivo, GIFs e imagens animadas. A resolução da foto se ajusta ao nível do aparelho (entrada, intermediário ou topo).
 - **Vídeos:** player em tela cheia com legendas (embutidas e arquivos `.srt` ou `.vtt` ao lado do vídeo), velocidade, escolha de resolução, Picture-in-Picture, retomar de onde parou e Chromecast.
-- **Cache e offline:** o que você assiste e baixa fica em um cache único, com limite ajustável (padrão 5 GB). Itens salvos abrem sem internet.
+- **Cache e offline:** o que você assiste e baixa fica em um cache único, com limite ajustável (padrão 5 GB). Itens salvos abrem sem internet. Se o arquivo for editado no Drive, a cópia antiga do cache é descartada (o app compara o md5 do conteúdo).
 - **Organização:** favoritos (só no app, separados por conta), lixeira do Drive com restaurar e excluir definitivamente, mover, copiar, renomear, criar pasta, enviar arquivos, compartilhar e abrir em outro app ou player.
 - **Miniaturas:** GIFs grandes ganham uma versão leve em cache depois da primeira vez, para gastar menos dados e memória.
 
