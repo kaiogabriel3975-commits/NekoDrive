@@ -1,5 +1,6 @@
 package com.nekodrive.app.ui.drive
 
+import com.nekodrive.app.data.tr
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,7 +40,7 @@ import kotlinx.coroutines.CancellationException
 @Composable
 fun SeletorDestino(vm: DriveViewModel) {
     val copiar = vm.seletorDestino ?: return
-    var trilha by remember { mutableStateOf(listOf("root" to "Meu Drive")) }
+    var trilha by remember { mutableStateOf(listOf("root" to tr("Meu Drive"))) }
     var pastas by remember { mutableStateOf<List<DriveFile>>(emptyList()) }
     var carregando by remember { mutableStateOf(true) }
     var falha by remember { mutableStateOf<String?>(null) }
@@ -62,7 +63,7 @@ fun SeletorDestino(vm: DriveViewModel) {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            falha = e.message ?: "Não foi possível listar as pastas"
+            falha = e.message ?: tr("Não foi possível listar as pastas")
         } finally {
             carregando = false
         }
@@ -70,12 +71,12 @@ fun SeletorDestino(vm: DriveViewModel) {
 
     AlertDialog(
         onDismissRequest = { vm.fecharSeletorDestino() },
-        title = { Text(if (copiar) "Copiar para…" else "Mover para…") },
+        title = { Text(if (copiar) tr("Copiar para…") else tr("Mover para…")) },
         text = {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (trilha.size > 1) {
-                        IconButton(onClick = { trilha = trilha.dropLast(1) }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Voltar") }
+                        IconButton(onClick = { trilha = trilha.dropLast(1) }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, tr("Voltar")) }
                     }
                     Text(atual.second, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(vertical = 8.dp))
                 }
@@ -83,7 +84,7 @@ fun SeletorDestino(vm: DriveViewModel) {
                     when {
                         carregando -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                         falha != null -> Text(falha!!, color = MaterialTheme.colorScheme.error)
-                        pastas.isEmpty() -> Text("Sem subpastas aqui", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        pastas.isEmpty() -> Text(tr("Sem subpastas aqui"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         else -> LazyColumn {
                             items(pastas, key = { it.id }) { f ->
                                 val livre = f.id !in bloqueadas
@@ -109,8 +110,8 @@ fun SeletorDestino(vm: DriveViewModel) {
             }
         },
         confirmButton = {
-            TextButton(onClick = { vm.confirmarDestino(atual.first, atual.second) }) { Text(if (copiar) "Copiar aqui" else "Mover aqui") }
+            TextButton(onClick = { vm.confirmarDestino(atual.first, atual.second) }) { Text(if (copiar) tr("Copiar aqui") else tr("Mover aqui")) }
         },
-        dismissButton = { TextButton(onClick = { vm.fecharSeletorDestino() }) { Text("Cancelar") } },
+        dismissButton = { TextButton(onClick = { vm.fecharSeletorDestino() }) { Text(tr("Cancelar")) } },
     )
 }
