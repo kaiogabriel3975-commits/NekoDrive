@@ -1,5 +1,6 @@
 package com.nekodrive.app.data.drive
 
+import com.nekodrive.app.data.tr
 import com.nekodrive.app.data.auth.AuthManager
 import com.nekodrive.app.data.auth.GoogleAccount
 import kotlinx.coroutines.Dispatchers
@@ -38,7 +39,7 @@ data class DriveFile(
 
 data class DrivePage(val files: List<DriveFile>, val nextPageToken: String?)
 
-class UnauthorizedException : IOException("Sessão expirada")
+class UnauthorizedException : IOException(tr("Sessão expirada"))
 
 class DriveHttpException(val code: Int, mensagem: String) : IOException(mensagem)
 
@@ -198,7 +199,7 @@ class DriveRepository(private val auth: AuthManager) {
             val sessao = cliente.newCall(abrirSessao).execute().use { r ->
                 if (r.code == 401) throw UnauthorizedException()
                 if (!r.isSuccessful) throw IOException(mensagemDeErro(r.code, r.body?.string().orEmpty()))
-                r.header("Location") ?: throw IOException("O Drive não abriu a sessão de envio")
+                r.header("Location") ?: throw IOException(tr("O Drive não abriu a sessão de envio"))
             }
             val corpo = object : okhttp3.RequestBody() {
                 override fun contentType() = mime.toMediaType()
@@ -430,7 +431,7 @@ class DriveRepository(private val auth: AuthManager) {
             http.newCall(req).execute().use { resp ->
                 if (resp.code == 401) throw UnauthorizedException()
                 if (!resp.isSuccessful) throw IOException(mensagemDeErro(resp.code, resp.body?.string().orEmpty()))
-                val corpo = resp.body ?: throw IOException("Resposta vazia do Drive")
+                val corpo = resp.body ?: throw IOException(tr("Resposta vazia do Drive"))
                 val total = corpo.contentLength()
                 var lidos = 0L
                 val buffer = ByteArray(64 * 1024)
@@ -478,6 +479,6 @@ class DriveRepository(private val auth: AuthManager) {
         } catch (e: Exception) {
             ""
         }
-        return if (detalhe.isNotEmpty()) "Drive ($code): $detalhe" else "Erro $code do Drive"
+        return if (detalhe.isNotEmpty()) tr("Drive (%s): %s", code, detalhe) else tr("Erro %s do Drive", code)
     }
 }
